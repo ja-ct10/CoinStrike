@@ -1,4 +1,5 @@
 import pygame
+from utils import resource_path
 
 # Screen
 SCREEN_WIDTH = 1024
@@ -23,7 +24,7 @@ SHOP_HEIGHT = 60
 
 class Settings:
     def __init__(self, x, y):
-        self.image = pygame.image.load("assets/settings.png").convert_alpha()
+        self.image = pygame.image.load(resource_path("assets/settings.png")).convert_alpha()
         self.image = pygame.transform.scale(
             self.image, (SETTINGS_WIDTH, SETTINGS_HEIGHT)
         )
@@ -57,8 +58,8 @@ def _ensure_settings_resources():
     if _SETTINGS_FONTS is not None:
         return
     _SETTINGS_FONTS = (
-        pygame.font.Font("assets/fonts/PressStart2P-Regular.ttf", 14),
-        pygame.font.Font("assets/fonts/PressStart2P-Regular.ttf", 12),
+        pygame.font.Font(resource_path("assets/fonts/PressStart2P-Regular.ttf"), 14),
+        pygame.font.Font(resource_path("assets/fonts/PressStart2P-Regular.ttf"), 12),
     )
     _SETTINGS_OVERLAY = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
     _SETTINGS_OVERLAY.fill((0, 0, 0, 180))

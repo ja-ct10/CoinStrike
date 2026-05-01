@@ -32,6 +32,7 @@ python_files = [
     'menu.py',
     'settings.py',
     'security.py',
+    'utils.py',
 ]
 
 # Collect all asset files

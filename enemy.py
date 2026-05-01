@@ -2,6 +2,7 @@ import pygame
 import random
 import math
 from settings import *
+from utils import resource_path
 
 # Module-level reusable Rects to avoid per-frame allocation in draw methods
 _SCRATCH_RECT = pygame.Rect(0, 0, 0, 0)

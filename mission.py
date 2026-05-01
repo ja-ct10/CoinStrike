@@ -1,6 +1,7 @@
 import pygame
 import random
 from settings import *
+from utils import resource_path
 
 PANEL_W = 260
 PANEL_H = 120  # Increased from 100 to ensure all 3 missions fit comfortably
@@ -67,8 +68,8 @@ def _pick_missions():
 
 class Mission:
     def __init__(self):
-        self.font_title = pygame.font.Font("assets/fonts/PressStart2P-Regular.ttf", 8)
-        self.font_line = pygame.font.Font("assets/fonts/PressStart2P-Regular.ttf", 8)
+        self.font_title = pygame.font.Font(resource_path("assets/fonts/PressStart2P-Regular.ttf"), 8)
+        self.font_line = pygame.font.Font(resource_path("assets/fonts/PressStart2P-Regular.ttf"), 8)
 
         self.missions = _pick_missions()
 

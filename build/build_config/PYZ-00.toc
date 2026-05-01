@@ -546,6 +546,9 @@
    'C:\\Users\\Julie Ann '
    'Tiron\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\urllib\\parse.py',
    'PYMODULE'),
+  ('utils',
+   'C:\\Users\\Julie Ann Tiron\\Desktop\\CoinStrike\\utils.py',
+   'PYMODULE'),
   ('weapon',
    'C:\\Users\\Julie Ann Tiron\\Desktop\\CoinStrike\\weapon.py',
    'PYMODULE'),

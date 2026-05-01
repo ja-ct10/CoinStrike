@@ -1,6 +1,7 @@
 import pygame
 import random
 from settings import *
+from utils import resource_path
 
 
 # ---------------------------------------------------------------------------
@@ -43,8 +44,8 @@ _SURF_GLITCH_IDLE = None  # "?" label
 def _get_glitch_fonts():
     global _FONT_GLITCH_WARN, _FONT_GLITCH_IDLE
     if _FONT_GLITCH_WARN is None:
-        _FONT_GLITCH_WARN = pygame.font.Font("assets/fonts/PressStart2P-Regular.ttf", 8)
-        _FONT_GLITCH_IDLE = pygame.font.Font("assets/fonts/PressStart2P-Regular.ttf", 6)
+        _FONT_GLITCH_WARN = pygame.font.Font(resource_path("assets/fonts/PressStart2P-Regular.ttf"), 8)
+        _FONT_GLITCH_IDLE = pygame.font.Font(resource_path("assets/fonts/PressStart2P-Regular.ttf"), 6)
     return _FONT_GLITCH_WARN, _FONT_GLITCH_IDLE
 
 

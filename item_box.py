@@ -1,5 +1,6 @@
 import pygame
 from settings import *
+from utils import resource_path
 
 
 class ItemBox:
@@ -8,11 +9,11 @@ class ItemBox:
 
         # Load correct image based on type
         if item_type == "spear":
-            image = pygame.image.load("assets/spear-box.png").convert_alpha()
+            image = pygame.image.load(resource_path("assets/spear-box.png")).convert_alpha()
         elif item_type == "gun":
-            image = pygame.image.load("assets/gun-box.png").convert_alpha()
+            image = pygame.image.load(resource_path("assets/gun-box.png")).convert_alpha()
         elif item_type == "grenade":
-            image = pygame.image.load("assets/grenade-box.png").convert_alpha()
+            image = pygame.image.load(resource_path("assets/grenade-box.png")).convert_alpha()
         else:
             raise ValueError("Unknown item type")
 
