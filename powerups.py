@@ -59,7 +59,9 @@ _DRAW_SCRATCH_RECT = pygame.Rect(0, 0, 0, 0)
 def _get_label_font() -> pygame.font.Font:
     global _LABEL_FONT
     if _LABEL_FONT is None:
-        _LABEL_FONT = pygame.font.Font(resource_path("assets/fonts/PressStart2P-Regular.ttf"), 6)
+        _LABEL_FONT = pygame.font.Font(
+            resource_path("assets/fonts/PressStart2P-Regular.ttf"), 6
+        )
     return _LABEL_FONT
 
 
@@ -161,6 +163,8 @@ class Powerup:
         bob_y = self.base_y + self._sin_val * PU_BOB_AMP
         self.rect.x = int(self.world_x)
         self.rect.y = int(bob_y)
+        # Pre-compute glow phase for draw() — avoids second math.sin call
+        self._glow_sin = math.sin(self.bob_timer * 2)
 
     def draw(self, screen, camera):
         if self.collected:
@@ -176,7 +180,7 @@ class Powerup:
 
         # Outer glow — reuse the sin value computed in update() (no second math.sin call)
         # Quantise to 16-step buckets to maximise cache hits
-        glow_alpha = int(120 + 80 * math.sin(self.bob_timer * 2))
+        glow_alpha = int(120 + 80 * self._glow_sin)
         glow_r = r + 6
         glow_key = (self.pu_type, glow_alpha >> 4)
         glow_surf = _SURF_CACHE.get(glow_key)
@@ -244,7 +248,7 @@ class PowerupManager:
     def _get_hud_font(self) -> pygame.font.Font:
         if self._hud_font is None:
             self._hud_font = pygame.font.Font(
-                "assets/fonts/PressStart2P-Regular.ttf", 8
+                resource_path("assets/fonts/PressStart2P-Regular.ttf"), 8
             )
         return self._hud_font
 
