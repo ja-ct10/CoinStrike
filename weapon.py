@@ -40,6 +40,8 @@ class Bullet:
         self.alive = True
         # Track spawn position to kill bullet after it travels too far
         self._spawn_x = x
+        # Reusable core rect — updated in-place in draw()
+        self._core_rect = pygame.Rect(0, 0, self.WIDTH - 4, self.HEIGHT - 2)
 
     def update(self, ground_segments, platforms):
         self.rect.x += self.dx
@@ -61,10 +63,10 @@ class Bullet:
         draw_rect = camera.apply(self.rect)
         screen.blit(self._get_glow_surf(), (draw_rect.x - 4, draw_rect.y - 4))
         pygame.draw.rect(screen, (0, 255, 255), draw_rect, border_radius=2)
-        core = pygame.Rect(
-            draw_rect.x + 2, draw_rect.y + 1, self.WIDTH - 4, self.HEIGHT - 2
-        )
-        pygame.draw.rect(screen, (255, 255, 255), core, border_radius=1)
+        # Reuse pre-allocated core rect — update in-place
+        self._core_rect.x = draw_rect.x + 2
+        self._core_rect.y = draw_rect.y + 1
+        pygame.draw.rect(screen, (255, 255, 255), self._core_rect, border_radius=1)
 
 
 # ---------------------------------------------------------------------------
@@ -151,6 +153,24 @@ class Grenade:
     # Reusable world rect for explosion ring blit — updated in-place
     _RING_WORLD_RECT = pygame.Rect(0, 0, 0, 0)
 
+    # Pre-baked grenade body surface — drawn once, reused every frame
+    _BODY_SURF: "pygame.Surface | None" = None
+
+    @classmethod
+    def _get_body_surf(cls) -> pygame.Surface:
+        """Pre-render the grenade body to avoid multiple draw calls per frame."""
+        if cls._BODY_SURF is None:
+            size = cls.RADIUS * 2
+            cls._BODY_SURF = pygame.Surface((size, size), pygame.SRCALPHA)
+            r = cls.RADIUS
+            # Body circle
+            pygame.draw.circle(cls._BODY_SURF, (60, 140, 60), (r, r), r)
+            pygame.draw.circle(cls._BODY_SURF, (80, 200, 80), (r, r), r, 2)
+            # Cross lines
+            pygame.draw.line(cls._BODY_SURF, (40, 100, 40), (r - 4, r), (r + 4, r), 1)
+            pygame.draw.line(cls._BODY_SURF, (40, 100, 40), (r, r - 4), (r, r + 4), 1)
+        return cls._BODY_SURF
+
     def __init__(self, x, y, facing_right, target=None):
         self.x = float(x)
         self.y = float(y)
@@ -171,21 +191,30 @@ class Grenade:
         )
 
         if target is not None:
-            # Aim toward the target using a ballistic arc.
-            # Solve for dx given: target_x = x + dx * t, target_y = y + dy*t + 0.5*g*t²
-            # We fix |dx| = THROW_SPEED_X and solve for the time t, then derive dy.
+            # Direct hit trajectory: calculate velocity to reach target using ballistic arc
+            # that accounts for gravity. Uses the standard projectile motion formula.
             tx, ty = target
-            horiz = tx - x
-            # Clamp horizontal speed direction to facing direction
-            speed_x = self.THROW_SPEED_X if horiz >= 0 else -self.THROW_SPEED_X
-            t = abs(horiz) / self.THROW_SPEED_X if self.THROW_SPEED_X != 0 else 1
-            # dy needed to reach ty at time t: ty = y + dy*t + 0.5*g*t²
-            # dy = (ty - y - 0.5*g*t²) / t
-            dy_needed = (ty - y - 0.5 * self.GRAVITY * t * t) / max(t, 1)
-            # Clamp dy so the grenade still arcs upward (cap at -4 to keep it visible)
-            speed_y = max(-18.0, min(-4.0, dy_needed))
-            self.dx = float(speed_x)
-            self.dy = speed_y
+            dx = tx - x
+            dy = ty - y
+
+            # Calculate the optimal throw angle and speed to hit the target
+            # Using the formula: t = dx / vx, and solving for vy given gravity
+            # We want: ty = y + vy*t + 0.5*g*t²
+
+            # Use a fixed horizontal speed and calculate vertical speed needed
+            horiz_dist = abs(dx)
+            if horiz_dist > 0:
+                # Time to reach target horizontally
+                t = horiz_dist / self.THROW_SPEED_X
+                # Vertical velocity needed: vy = (dy - 0.5*g*t²) / t
+                vy_needed = (dy - 0.5 * self.GRAVITY * t * t) / t
+
+                self.dx = self.THROW_SPEED_X if dx >= 0 else -self.THROW_SPEED_X
+                self.dy = float(vy_needed)
+            else:
+                # Target is directly above/below - throw straight
+                self.dx = self.THROW_SPEED_X if facing_right else -self.THROW_SPEED_X
+                self.dy = float(self.THROW_SPEED_Y)
         else:
             self.dx = self.THROW_SPEED_X if facing_right else -self.THROW_SPEED_X
             self.dy = float(self.THROW_SPEED_Y)
@@ -286,10 +315,12 @@ class Grenade:
 
         draw_rect = camera.apply(self.rect)
         cx, cy = draw_rect.centerx, draw_rect.centery
-        pygame.draw.circle(screen, (60, 140, 60), (cx, cy), self.RADIUS)
-        pygame.draw.circle(screen, (80, 200, 80), (cx, cy), self.RADIUS, 2)
-        pygame.draw.line(screen, (40, 100, 40), (cx - 4, cy), (cx + 4, cy), 1)
-        pygame.draw.line(screen, (40, 100, 40), (cx, cy - 4), (cx, cy + 4), 1)
+
+        # Blit pre-rendered grenade body — single blit instead of 4 draw calls
+        body_surf = self._get_body_surf()
+        screen.blit(body_surf, (cx - self.RADIUS, cy - self.RADIUS))
+
+        # Fuse pin (changes per frame so can't be cached)
         pygame.draw.rect(screen, (200, 200, 60), (cx - 3, cy - self.RADIUS - 5, 6, 5))
         if self.fuse > 0 and (self.fuse // 4) % 2 == 0:
             pygame.draw.circle(screen, (255, 200, 0), (cx, cy - self.RADIUS - 5), 3)
@@ -316,6 +347,8 @@ class Spear:
         self._spawn_x = x  # used for travel-distance culling
         # Reusable rect — updated in-place to avoid per-frame allocation
         self._rect = pygame.Rect(int(self.x) - 4, int(self.y) - 4, 8, 8)
+        # Reusable world rect for draw — updated in-place
+        self._world_rect = pygame.Rect(0, 0, self.LENGTH, self.THICKNESS)
 
         if target is not None:
             # Aim directly at the target using a normalised direction vector,
@@ -391,13 +424,10 @@ class Spear:
         for p in self.particles:
             p.draw(screen, camera)
 
-        world_rect = pygame.Rect(
-            int(self.x) - self.LENGTH // 2,
-            int(self.y) - self.THICKNESS // 2,
-            self.LENGTH,
-            self.THICKNESS,
-        )
-        draw_rect = camera.apply(world_rect)
+        # Reuse pre-allocated world rect — update in-place
+        self._world_rect.x = int(self.x) - self.LENGTH // 2
+        self._world_rect.y = int(self.y) - self.THICKNESS // 2
+        draw_rect = camera.apply(self._world_rect)
         cx, cy = draw_rect.centerx, draw_rect.centery
 
         angle = (-15 if self.facing_right else 165) if self.stuck else self._get_angle()

@@ -221,7 +221,10 @@ class PowerupManager:
 
     def __init__(self):
         self.powerups: list[Powerup] = []
-        self._seen_surface_ids: set = set()
+        # Track by world-x position instead of Python id() — id() can be reused
+        # after pruning, causing new surfaces to be mistaken for already-seen ones.
+        self._seen_platform_xs: set = set()
+        self._seen_ground_xs: set = set()
         self._surface_counter: int = 0
 
         # Active effects: list of {"type": str, "timer": int}
@@ -248,18 +251,18 @@ class PowerupManager:
     def update_surfaces(self, platforms, ground_segments):
         """Called by WorldManager when new terrain is added."""
         for surf in platforms:
-            sid = id(surf)
-            if sid in self._seen_surface_ids:
+            key = surf.rect.x
+            if key in self._seen_platform_xs:
                 continue
-            self._seen_surface_ids.add(sid)
+            self._seen_platform_xs.add(key)
             self._surface_counter += 1
             if self._surface_counter % self.SPAWN_EVERY_N == 0:
                 self._spawn_on_surface(surf)
         for surf in ground_segments:
-            sid = id(surf)
-            if sid in self._seen_surface_ids:
+            key = surf.rect.x
+            if key in self._seen_ground_xs:
                 continue
-            self._seen_surface_ids.add(sid)
+            self._seen_ground_xs.add(key)
             self._surface_counter += 1
             if self._surface_counter % self.SPAWN_EVERY_N == 0:
                 self._spawn_on_surface(surf)

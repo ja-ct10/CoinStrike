@@ -1,0 +1,23 @@
+# CoinStrike Security System Requirements
+
+# Core game dependency
+pygame>=2.5.0
+
+# Build and packaging
+pyinstaller>=6.0.0
+
+# Optional: Code obfuscation (recommended for release builds)
+# pyarmor>=8.0.0
+
+# Standard library modules used (no installation needed):
+# - hashlib (file integrity, checksums)
+# - json (save system)
+# - random (key generation)
+# - time (timestamp, rate limiting)
+# - os (file operations)
+
+# Installation instructions:
+# pip install -r requirements_security.txt
+
+# For obfuscated builds:
+# pip install pyarmor
