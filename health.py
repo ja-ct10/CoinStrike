@@ -11,8 +11,20 @@ BAR_H = 18
 BAR_X = 10
 BAR_Y = 10
 
+# ---------------------------------------------------------------------------
+# Module-level surface caches for Health.draw — allocated once, reused every frame
+# ---------------------------------------------------------------------------
+_SHINE_SURF_CACHE: dict = {}  # fill_w → Surface
+_PULSE_SURF_CACHE: dict = {}  # fill_w → Surface
+
 
 class Health:
+    # Pre-allocated rects reused every draw call — avoids per-frame allocation
+    _BAR_BG_RECT = pygame.Rect(BAR_X, BAR_Y, BAR_W, BAR_H)
+    _BAR_FILL_RECT = pygame.Rect(BAR_X, BAR_Y, BAR_W, BAR_H)
+    _BAR_BORDER_RECT = pygame.Rect(BAR_X, BAR_Y, BAR_W, BAR_H)
+    _BAR_INNER_RECT = pygame.Rect(BAR_X + 2, BAR_Y + 2, BAR_W - 4, BAR_H - 4)
+
     def __init__(self, x, y):
         # lives param kept for API compatibility but we use hp now
         self.hp = MAX_HP
@@ -26,6 +38,10 @@ class Health:
         self.respawn_y = 300
         self.invincible_timer = 0
         self.INVINCIBLE_FRAMES = 90
+        # Post-respawn shield — separate from regular invincibility flicker.
+        # Lasts 60 frames (1 second). Drawn as a visible bubble on the player.
+        self.shield_timer = 0
+        self.SHIELD_FRAMES = 60
 
         # Regen state
         self.regen_delay_timer = 0  # counts down to 0 before regen starts
@@ -33,28 +49,12 @@ class Health:
 
         self.game_over = False
 
-        # For compatibility with enemy.py which reads health.lives
-        # We expose lives as a property so enemy damage still works
-        self._lives_compat = 3
-
         self._hp_font = pygame.font.Font("assets/fonts/PressStart2P-Regular.ttf", 9)
-
-    # ------------------------------------------------------------------
-    # Compatibility shim — enemy.py does health.lives -= 1
-    # We map each "life lost" to -20 HP
-    # ------------------------------------------------------------------
-    @property
-    def lives(self):
-        return self._lives_compat
-
-    @lives.setter
-    def lives(self, value):
-        diff = self._lives_compat - value  # how many lives were deducted
-        self._lives_compat = value
-        self.hp = max(0, self.hp - diff * 20)
-        if self.hp <= 0:
-            self.hp = 0
-            self.game_over = True
+        # Cached label surfaces — re-rendered only when state changes
+        self._cached_label_text: str | None = None
+        self._cached_label_surf: pygame.Surface | None = None
+        self._cached_hp_val: int | None = None
+        self._cached_hp_surf: pygame.Surface | None = None
 
     # ------------------------------------------------------------------
     def take_damage(self, amount):
@@ -75,6 +75,8 @@ class Health:
 
         if self.invincible_timer > 0:
             self.invincible_timer -= 1
+        if self.shield_timer > 0:
+            self.shield_timer -= 1
 
         # Regen tick — only when not dead and delay has elapsed
         if not self.game_over and self.hp < self.max_hp:
@@ -114,6 +116,8 @@ class Health:
                 player.rect.y = self.respawn_y
                 player.vel_y = 0
                 self.invincible_timer = self.INVINCIBLE_FRAMES
+                # Grant a 1-second visible shield on respawn
+                self.shield_timer = self.SHIELD_FRAMES
             return True
 
         return False
@@ -136,84 +140,122 @@ class Health:
         if self.invincible_timer > 0 and (self.invincible_timer // 6) % 2 == 0:
             bar_color = (bar_color[0] // 2, bar_color[1] // 2, bar_color[2] // 2)
 
-        # --- Background track ---
-        pygame.draw.rect(
-            screen,
-            (30, 10, 50),
-            pygame.Rect(BAR_X, BAR_Y, BAR_W, BAR_H),
-            border_radius=6,
-        )
+        # --- Background track --- (reuse pre-allocated class-level rect)
+        Health._BAR_BG_RECT.update(BAR_X, BAR_Y, BAR_W, BAR_H)
+        pygame.draw.rect(screen, (30, 10, 50), Health._BAR_BG_RECT, border_radius=6)
 
-        # --- Fill ---
+        # --- Fill --- (reuse pre-allocated class-level rect)
         if fill_w > 0:
-            pygame.draw.rect(
-                screen,
-                bar_color,
-                pygame.Rect(BAR_X, BAR_Y, fill_w, BAR_H),
-                border_radius=6,
-            )
+            Health._BAR_FILL_RECT.update(BAR_X, BAR_Y, fill_w, BAR_H)
+            pygame.draw.rect(screen, bar_color, Health._BAR_FILL_RECT, border_radius=6)
 
         # --- Shine strip (top highlight) ---
         if fill_w > 4:
-            shine_surf = pygame.Surface((fill_w - 4, BAR_H // 3), pygame.SRCALPHA)
-            shine_surf.fill((255, 255, 255, 40))
+            sw = fill_w - 4
+            shine_surf = _SHINE_SURF_CACHE.get(sw)
+            if shine_surf is None:
+                shine_surf = pygame.Surface((sw, BAR_H // 3), pygame.SRCALPHA)
+                shine_surf.fill((255, 255, 255, 40))
+                if len(_SHINE_SURF_CACHE) > 210:
+                    _SHINE_SURF_CACHE.clear()
+                _SHINE_SURF_CACHE[sw] = shine_surf
             screen.blit(shine_surf, (BAR_X + 2, BAR_Y + 2))
 
         # --- Regen pulse glow (cyan tint on bar when regen is active) ---
         if self.regen_delay_timer == 0 and self.hp < self.max_hp and fill_w > 0:
-            pulse = pygame.Surface((fill_w, BAR_H), pygame.SRCALPHA)
-            pulse.fill((0, 220, 255, 35))
+            pulse = _PULSE_SURF_CACHE.get(fill_w)
+            if pulse is None:
+                pulse = pygame.Surface((fill_w, BAR_H), pygame.SRCALPHA)
+                pulse.fill((0, 220, 255, 35))
+                if len(_PULSE_SURF_CACHE) > 210:
+                    _PULSE_SURF_CACHE.clear()
+                _PULSE_SURF_CACHE[fill_w] = pulse
             screen.blit(pulse, (BAR_X, BAR_Y))
 
-        # --- Border ---
+        # --- Border --- (reuse pre-allocated class-level rects)
+        Health._BAR_BORDER_RECT.update(BAR_X, BAR_Y, BAR_W, BAR_H)
         pygame.draw.rect(
-            screen,
-            (160, 32, 240),
-            pygame.Rect(BAR_X, BAR_Y, BAR_W, BAR_H),
-            2,
-            border_radius=6,
+            screen, (160, 32, 240), Health._BAR_BORDER_RECT, 2, border_radius=6
         )
+        Health._BAR_INNER_RECT.update(BAR_X + 2, BAR_Y + 2, BAR_W - 4, BAR_H - 4)
         pygame.draw.rect(
-            screen,
-            (0, 255, 255),
-            pygame.Rect(BAR_X + 2, BAR_Y + 2, BAR_W - 4, BAR_H - 4),
-            1,
-            border_radius=5,
+            screen, (0, 255, 255), Health._BAR_INNER_RECT, 1, border_radius=5
         )
 
         # --- "HP" label + regen indicator ---
         regen_active = self.regen_delay_timer == 0 and self.hp < self.max_hp
         label_color = (0, 220, 255) if regen_active else (200, 200, 255)
         label_text = "HP +" if regen_active else "HP"
-        label = self._hp_font.render(label_text, True, label_color)
-        screen.blit(label, (BAR_X, BAR_Y + BAR_H + 4))
+        # Re-render only when text or color changes
+        if label_text != self._cached_label_text:
+            self._cached_label_text = label_text
+            self._cached_label_surf = self._hp_font.render(
+                label_text, True, label_color
+            )
+        screen.blit(self._cached_label_surf, (BAR_X, BAR_Y + BAR_H + 4))
 
         # --- Numeric value to the right ---
-        hp_text = self._hp_font.render(f"{self.hp}", True, (255, 255, 255))
+        # Re-render only when HP value changes
+        if self.hp != self._cached_hp_val:
+            self._cached_hp_val = self.hp
+            self._cached_hp_surf = self._hp_font.render(
+                f"{self.hp}", True, (255, 255, 255)
+            )
         screen.blit(
-            hp_text, (BAR_X + BAR_W + 6, BAR_Y + (BAR_H - hp_text.get_height()) // 2)
+            self._cached_hp_surf,
+            (
+                BAR_X + BAR_W + 6,
+                BAR_Y + (BAR_H - self._cached_hp_surf.get_height()) // 2,
+            ),
         )
 
 
 # ---------------------------------------------------------------------------
 # GAME OVER SCREEN
 # ---------------------------------------------------------------------------
+
+# Cached resources for draw_game_over — built once on first call
+_GO_FONTS: tuple | None = None  # (title_font, sub_font, btn_font)
+_GO_OVERLAY: pygame.Surface | None = None
+_GO_MODAL_SURF: pygame.Surface | None = None
+_GO_SUB_SURF: pygame.Surface | None = None
+_GO_BTN_SURFS: dict = {}  # (label, is_hover) → Surface
+# Cache for the flashing title — keyed by flash_on bool (only 2 states)
+_GO_TITLE_SURFS: dict = {}  # flash_on → Surface
+
+
+def _ensure_go_resources():
+    global _GO_FONTS, _GO_OVERLAY, _GO_MODAL_SURF, _GO_SUB_SURF
+    if _GO_FONTS is None:
+        _GO_FONTS = (
+            pygame.font.Font("assets/fonts/PressStart2P-Regular.ttf", 26),
+            pygame.font.Font("assets/fonts/PressStart2P-Regular.ttf", 12),
+            pygame.font.Font("assets/fonts/PressStart2P-Regular.ttf", 13),
+        )
+        _GO_OVERLAY = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+        _GO_OVERLAY.fill((0, 0, 0, 210))
+
+        modal_w, modal_h = 420, 280
+        _GO_MODAL_SURF = pygame.Surface((modal_w, modal_h), pygame.SRCALPHA)
+        _GO_MODAL_SURF.fill((10, 4, 28, 250))
+
+        title_font, sub_font, btn_font = _GO_FONTS
+        _GO_SUB_SURF = sub_font.render("Try Again?", True, (220, 220, 255))
+        # Pre-render both flash states for the title (only 2 possible colors)
+        _GO_TITLE_SURFS[True] = title_font.render("GAME OVER", True, (255, 40, 80))
+        _GO_TITLE_SURFS[False] = title_font.render("GAME OVER", True, (255, 180, 200))
+
+
 def draw_game_over(screen, mouse_pos, flash_timer):
+    _ensure_go_resources()
+    title_font, sub_font, btn_font = _GO_FONTS
+
     modal_w, modal_h = 420, 280
     modal_x = SCREEN_WIDTH // 2 - modal_w // 2
     modal_y = SCREEN_HEIGHT // 2 - modal_h // 2
 
-    title_font = pygame.font.Font("assets/fonts/PressStart2P-Regular.ttf", 26)
-    sub_font = pygame.font.Font("assets/fonts/PressStart2P-Regular.ttf", 12)
-    btn_font = pygame.font.Font("assets/fonts/PressStart2P-Regular.ttf", 13)
-
-    overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
-    overlay.fill((0, 0, 0, 210))
-    screen.blit(overlay, (0, 0))
-
-    modal_surf = pygame.Surface((modal_w, modal_h), pygame.SRCALPHA)
-    modal_surf.fill((10, 4, 28, 250))
-    screen.blit(modal_surf, (modal_x, modal_y))
+    screen.blit(_GO_OVERLAY, (0, 0))
+    screen.blit(_GO_MODAL_SURF, (modal_x, modal_y))
 
     pygame.draw.rect(
         screen,
@@ -239,8 +281,7 @@ def draw_game_over(screen, mouse_pos, flash_timer):
         pygame.draw.rect(screen, (255, 60, 120), pygame.Rect(cx, cy, 6, 6))
 
     flash_on = (flash_timer // 20) % 2 == 0
-    title_color = (255, 40, 80) if flash_on else (255, 180, 200)
-    title_surf = title_font.render("GAME OVER", True, title_color)
+    title_surf = _GO_TITLE_SURFS[flash_on]
     title_rect = title_surf.get_rect(center=(SCREEN_WIDTH // 2, modal_y + 60))
     screen.blit(title_surf, title_rect)
 
@@ -252,9 +293,8 @@ def draw_game_over(screen, mouse_pos, flash_timer):
         1,
     )
 
-    sub_surf = sub_font.render("Try Again?", True, (220, 220, 255))
-    sub_rect = sub_surf.get_rect(center=(SCREEN_WIDTH // 2, modal_y + 120))
-    screen.blit(sub_surf, sub_rect)
+    sub_rect = _GO_SUB_SURF.get_rect(center=(SCREEN_WIDTH // 2, modal_y + 120))
+    screen.blit(_GO_SUB_SURF, sub_rect)
 
     btn_w, btn_h = 130, 44
     gap = 30
@@ -270,9 +310,13 @@ def draw_game_over(screen, mouse_pos, flash_timer):
         (no_rect, "NO", (160, 0, 60), (255, 60, 120)),
     ]:
         is_hover = rect.collidepoint(mouse_pos)
-        btn_surf = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
-        r, g, b = base_col
-        btn_surf.fill((r, g, b, 220) if is_hover else (r // 2, g // 2, b // 2, 180))
+        key = (label, is_hover)
+        btn_surf = _GO_BTN_SURFS.get(key)
+        if btn_surf is None:
+            btn_surf = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
+            r, g, b = base_col
+            btn_surf.fill((r, g, b, 220) if is_hover else (r // 2, g // 2, b // 2, 180))
+            _GO_BTN_SURFS[key] = btn_surf
         screen.blit(btn_surf, rect.topleft)
         pygame.draw.rect(screen, border_col, rect, 2, border_radius=6)
 
@@ -284,9 +328,14 @@ def draw_game_over(screen, mouse_pos, flash_timer):
                 border_radius=2,
             )
 
-        text_surf = btn_font.render(
-            label, True, (255, 255, 255) if is_hover else (200, 200, 200)
-        )
+        # Button label — cached per (label, is_hover) to avoid per-frame render
+        text_key = (label, is_hover)
+        text_surf = _GO_BTN_SURFS.get(("text_" + label, is_hover))
+        if text_surf is None:
+            text_surf = btn_font.render(
+                label, True, (255, 255, 255) if is_hover else (200, 200, 200)
+            )
+            _GO_BTN_SURFS[("text_" + label, is_hover)] = text_surf
         text_rect = text_surf.get_rect(center=rect.center)
         screen.blit(text_surf, text_rect)
 

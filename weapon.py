@@ -20,24 +20,38 @@ class Bullet:
     WIDTH = 12
     HEIGHT = 5
 
+    # Pre-baked glow surface — allocated once, reused every draw call
+    _GLOW_SURF: "pygame.Surface | None" = None
+
+    @classmethod
+    def _get_glow_surf(cls) -> pygame.Surface:
+        if cls._GLOW_SURF is None:
+            cls._GLOW_SURF = pygame.Surface(
+                (cls.WIDTH + 8, cls.HEIGHT + 8), pygame.SRCALPHA
+            )
+            pygame.draw.ellipse(
+                cls._GLOW_SURF, (0, 255, 255, 60), cls._GLOW_SURF.get_rect()
+            )
+        return cls._GLOW_SURF
+
     def __init__(self, x, y, facing_right):
         self.dx = self.SPEED if facing_right else -self.SPEED
         self.rect = pygame.Rect(x, y, self.WIDTH, self.HEIGHT)
         self.alive = True
+        # Track spawn position to kill bullet after it travels too far
+        self._spawn_x = x
 
     def update(self, ground_segments, platforms):
         self.rect.x += self.dx
 
-        if self.rect.right < -200 or self.rect.left > SCREEN_WIDTH * 6 + 200:
+        # Kill after travelling 1200px — far enough to cross the screen twice
+        if abs(self.rect.x - self._spawn_x) > 1200:
             self.alive = False
             return
 
+        # Only collide with ground (not platforms) — bullets fly over/through platforms
         for seg in ground_segments:
             if self.rect.colliderect(seg.rect):
-                self.alive = False
-                return
-        for p in platforms:
-            if self.rect.colliderect(p.rect):
                 self.alive = False
                 return
 
@@ -45,9 +59,7 @@ class Bullet:
         if not self.alive:
             return
         draw_rect = camera.apply(self.rect)
-        glow_surf = pygame.Surface((self.WIDTH + 8, self.HEIGHT + 8), pygame.SRCALPHA)
-        pygame.draw.ellipse(glow_surf, (0, 255, 255, 60), glow_surf.get_rect())
-        screen.blit(glow_surf, (draw_rect.x - 4, draw_rect.y - 4))
+        screen.blit(self._get_glow_surf(), (draw_rect.x - 4, draw_rect.y - 4))
         pygame.draw.rect(screen, (0, 255, 255), draw_rect, border_radius=2)
         core = pygame.Rect(
             draw_rect.x + 2, draw_rect.y + 1, self.WIDTH - 4, self.HEIGHT - 2
@@ -59,6 +71,13 @@ class Bullet:
 # PARTICLE
 # ---------------------------------------------------------------------------
 class Particle:
+    # Surface cache keyed by (size, r, g, b, alpha_quantised) — same pattern as
+    # EnemyParticle in enemy.py. Quantising alpha to steps of 16 keeps the cache
+    # small (16 buckets) at the cost of imperceptible banding.
+    _surf_cache: dict = {}
+    # Reusable world rect — updated in-place to avoid per-frame allocation
+    _WORLD_RECT = pygame.Rect(0, 0, 0, 0)
+
     def __init__(self, x, y, color, speed=None, angle=None, lifetime=None):
         angle = angle if angle is not None else random.uniform(0, 2 * math.pi)
         speed = speed if speed is not None else random.uniform(2, 7)
@@ -86,12 +105,25 @@ class Particle:
         alpha = int(255 * (self.lifetime / self.max_lifetime))
         size = max(1, int(self.size * (self.lifetime / self.max_lifetime)))
         r, g, b = self.color
-        surf = pygame.Surface((size * 2, size * 2), pygame.SRCALPHA)
-        pygame.draw.circle(surf, (r, g, b, alpha), (size, size), size)
-        world_rect = pygame.Rect(
-            int(self.x) - size, int(self.y) - size, size * 2, size * 2
-        )
-        screen.blit(surf, camera.apply(world_rect))
+        # Quantise alpha to 16-step buckets to maximise cache hits
+        alpha_q = (alpha >> 4) << 4
+        key = (size, r, g, b, alpha_q)
+        surf = Particle._surf_cache.get(key)
+        if surf is None:
+            surf = pygame.Surface((size * 2, size * 2), pygame.SRCALPHA)
+            pygame.draw.circle(surf, (r, g, b, alpha_q), (size, size), size)
+            # Evict oldest quarter when cache exceeds 256 entries
+            if len(Particle._surf_cache) > 256:
+                evict = list(Particle._surf_cache.keys())[:64]
+                for k in evict:
+                    del Particle._surf_cache[k]
+            Particle._surf_cache[key] = surf
+        # Reuse class-level rect — update in-place
+        Particle._WORLD_RECT.x = int(self.x) - size
+        Particle._WORLD_RECT.y = int(self.y) - size
+        Particle._WORLD_RECT.width = size * 2
+        Particle._WORLD_RECT.height = size * 2
+        screen.blit(surf, camera.apply(Particle._WORLD_RECT))
 
 
 # ---------------------------------------------------------------------------
@@ -114,11 +146,15 @@ class Grenade:
     FUSE_FRAMES = 120
     EXPLOSION_RADIUS = 90
 
-    def __init__(self, x, y, facing_right):
+    # Explosion ring surface cache keyed by (radius, alpha_quantised)
+    _RING_CACHE: dict = {}
+    # Reusable world rect for explosion ring blit — updated in-place
+    _RING_WORLD_RECT = pygame.Rect(0, 0, 0, 0)
+
+    def __init__(self, x, y, facing_right, target=None):
         self.x = float(x)
         self.y = float(y)
-        self.dx = self.THROW_SPEED_X if facing_right else -self.THROW_SPEED_X
-        self.dy = float(self.THROW_SPEED_Y)
+        self._spawn_x = x  # used for travel-distance culling
         self.alive = True
         self.exploding = False
         self.explosion_frame = 0
@@ -126,15 +162,40 @@ class Grenade:
         self.fuse = self.FUSE_FRAMES
         self.particles = []
         self.rotation = 0
-
-    @property
-    def rect(self):
-        return pygame.Rect(
+        # Reusable rect — updated in-place to avoid per-frame allocation
+        self._rect = pygame.Rect(
             int(self.x) - self.RADIUS,
             int(self.y) - self.RADIUS,
             self.RADIUS * 2,
             self.RADIUS * 2,
         )
+
+        if target is not None:
+            # Aim toward the target using a ballistic arc.
+            # Solve for dx given: target_x = x + dx * t, target_y = y + dy*t + 0.5*g*t²
+            # We fix |dx| = THROW_SPEED_X and solve for the time t, then derive dy.
+            tx, ty = target
+            horiz = tx - x
+            # Clamp horizontal speed direction to facing direction
+            speed_x = self.THROW_SPEED_X if horiz >= 0 else -self.THROW_SPEED_X
+            t = abs(horiz) / self.THROW_SPEED_X if self.THROW_SPEED_X != 0 else 1
+            # dy needed to reach ty at time t: ty = y + dy*t + 0.5*g*t²
+            # dy = (ty - y - 0.5*g*t²) / t
+            dy_needed = (ty - y - 0.5 * self.GRAVITY * t * t) / max(t, 1)
+            # Clamp dy so the grenade still arcs upward (cap at -4 to keep it visible)
+            speed_y = max(-18.0, min(-4.0, dy_needed))
+            self.dx = float(speed_x)
+            self.dy = speed_y
+        else:
+            self.dx = self.THROW_SPEED_X if facing_right else -self.THROW_SPEED_X
+            self.dy = float(self.THROW_SPEED_Y)
+
+    @property
+    def rect(self):
+        # Update in-place — no allocation
+        self._rect.x = int(self.x) - self.RADIUS
+        self._rect.y = int(self.y) - self.RADIUS
+        return self._rect
 
     def _explode(self):
         self.exploding = True
@@ -171,6 +232,11 @@ class Grenade:
         self.rotation += self.dx * 3
         self.dx *= 0.99
 
+        # Kill if it travels more than 1200px horizontally from spawn
+        if abs(self.x - self._spawn_x) > 1200:
+            self._explode()
+            return
+
         for seg in ground_segments:
             if self.rect.colliderect(seg.rect):
                 self._explode()
@@ -193,14 +259,29 @@ class Grenade:
             radius = int(self.EXPLOSION_RADIUS * progress)
             alpha = int(220 * (1 - progress))
             if alpha > 0:
-                world_rect = pygame.Rect(
-                    int(self.x) - radius, int(self.y) - radius, radius * 2, radius * 2
-                )
-                ring_surf = pygame.Surface((radius * 2, radius * 2), pygame.SRCALPHA)
-                pygame.draw.circle(
-                    ring_surf, (255, 160, 0, alpha), (radius, radius), radius, 4
-                )
-                screen.blit(ring_surf, camera.apply(world_rect))
+                # Quantise alpha to 8-step buckets for better cache hit rate
+                alpha_q = (alpha >> 3) << 3
+                ring_key = (radius, alpha_q)
+                ring_surf = Grenade._RING_CACHE.get(ring_key)
+                if ring_surf is None:
+                    ring_surf = pygame.Surface(
+                        (radius * 2, radius * 2), pygame.SRCALPHA
+                    )
+                    pygame.draw.circle(
+                        ring_surf, (255, 160, 0, alpha_q), (radius, radius), radius, 4
+                    )
+                    # Keep cache bounded — explosion lasts 18 frames so this stays tiny
+                    if len(Grenade._RING_CACHE) > 64:
+                        evict = list(Grenade._RING_CACHE.keys())[:16]
+                        for k in evict:
+                            del Grenade._RING_CACHE[k]
+                    Grenade._RING_CACHE[ring_key] = ring_surf
+                # Reuse class-level world rect — update in-place
+                Grenade._RING_WORLD_RECT.x = int(self.x) - radius
+                Grenade._RING_WORLD_RECT.y = int(self.y) - radius
+                Grenade._RING_WORLD_RECT.width = radius * 2
+                Grenade._RING_WORLD_RECT.height = radius * 2
+                screen.blit(ring_surf, camera.apply(Grenade._RING_WORLD_RECT))
             return
 
         draw_rect = camera.apply(self.rect)
@@ -209,9 +290,7 @@ class Grenade:
         pygame.draw.circle(screen, (80, 200, 80), (cx, cy), self.RADIUS, 2)
         pygame.draw.line(screen, (40, 100, 40), (cx - 4, cy), (cx + 4, cy), 1)
         pygame.draw.line(screen, (40, 100, 40), (cx, cy - 4), (cx, cy + 4), 1)
-        pygame.draw.rect(
-            screen, (200, 200, 60), pygame.Rect(cx - 3, cy - self.RADIUS - 5, 6, 5)
-        )
+        pygame.draw.rect(screen, (200, 200, 60), (cx - 3, cy - self.RADIUS - 5, 6, 5))
         if self.fuse > 0 and (self.fuse // 4) % 2 == 0:
             pygame.draw.circle(screen, (255, 200, 0), (cx, cy - self.RADIUS - 5), 3)
 
@@ -220,26 +299,46 @@ class Grenade:
 # SPEAR
 # ---------------------------------------------------------------------------
 class Spear:
-    THROW_SPEED_X = 12
-    THROW_SPEED_Y = -8
-    GRAVITY = 0.35
+    THROW_SPEED_X = 14
+    THROW_SPEED_Y = 0  # horizontal throw — no upward arc
+    GRAVITY = 0.15  # very slight drop over distance
     LENGTH = 32
     THICKNESS = 4
 
-    def __init__(self, x, y, facing_right):
+    def __init__(self, x, y, facing_right, target=None):
         self.x = float(x)
         self.y = float(y)
-        self.dx = self.THROW_SPEED_X if facing_right else -self.THROW_SPEED_X
-        self.dy = float(self.THROW_SPEED_Y)
         self.facing_right = facing_right
         self.stuck = False
         self.alive = True
         self.stuck_timer = 180
         self.particles = []
+        self._spawn_x = x  # used for travel-distance culling
+        # Reusable rect — updated in-place to avoid per-frame allocation
+        self._rect = pygame.Rect(int(self.x) - 4, int(self.y) - 4, 8, 8)
+
+        if target is not None:
+            # Aim directly at the target using a normalised direction vector,
+            # scaled to THROW_SPEED_X so the spear travels at a consistent speed.
+            tx, ty = target
+            dx = tx - x
+            dy = ty - y
+            dist = math.sqrt(dx * dx + dy * dy) or 1.0
+            speed = math.sqrt(self.THROW_SPEED_X**2 + self.THROW_SPEED_Y**2)
+            # Use full throw speed magnitude along the aim vector
+            speed = max(self.THROW_SPEED_X, speed)
+            self.dx = (dx / dist) * speed
+            self.dy = (dy / dist) * speed
+        else:
+            self.dx = self.THROW_SPEED_X if facing_right else -self.THROW_SPEED_X
+            self.dy = float(self.THROW_SPEED_Y)
 
     @property
     def rect(self):
-        return pygame.Rect(int(self.x) - 4, int(self.y) - 4, 8, 8)
+        # Update in-place — no allocation
+        self._rect.x = int(self.x) - 4
+        self._rect.y = int(self.y) - 4
+        return self._rect
 
     def _get_angle(self):
         return math.degrees(math.atan2(self.dy, self.dx))
@@ -283,7 +382,7 @@ class Spear:
                 self._stick()
                 return
 
-        if self.x < -400 or self.x > SCREEN_WIDTH * 6 + 400:
+        if self.x < self._spawn_x - 1200 or self.x > self._spawn_x + 1200:
             self.alive = False
 
     def draw(self, screen, camera):
@@ -385,6 +484,7 @@ class WeaponManager:
         self.spears = []
         self._gun_cooldown = 0
         self._throw_cooldown = 0
+        self.weapons_bought = 0  # Track weapons purchased for mission progress
 
         # Weapon display images (loaded once)
         self._images = {}
@@ -399,8 +499,57 @@ class WeaponManager:
             except Exception:
                 self._images[name] = None
 
+        # Pre-flipped images — avoids pygame.transform.flip() every draw call
+        self._images_flipped = {
+            name: pygame.transform.flip(img, True, False)
+            for name, img in self._images.items()
+            if img is not None
+        }
+
+        # HUD slot backgrounds — pre-rendered once per (active) state
+        # keyed by (weapon_name, active: bool)
+        slot_w, slot_h = 80, 52
+        self._slot_bg_surfs: dict = {}
+        for active in (True, False):
+            surf = pygame.Surface((slot_w, slot_h), pygame.SRCALPHA)
+            surf.fill((10, 6, 28, 200))
+            self._slot_bg_surfs[active] = surf
+
+        # HUD weapon icons — pre-scaled to 28×28, both active and inactive variants
+        # keyed by (weapon_name, active: bool)
+        self._hud_icons: dict = {}
+        for name, img in self._images.items():
+            if img is None:
+                self._hud_icons[(name, True)] = None
+                self._hud_icons[(name, False)] = None
+                continue
+            icon_active = pygame.transform.scale(img, (28, 28))
+            icon_inactive = icon_active.copy()
+            icon_inactive.fill((60, 60, 60, 0), special_flags=pygame.BLEND_RGBA_MULT)
+            self._hud_icons[(name, True)] = icon_active
+            self._hud_icons[(name, False)] = icon_inactive
+
+        # HUD text surfaces — pre-rendered; ammo count re-rendered only when it changes
+        # keyed by weapon_name
+        self._hud_label_surfs: dict = {}  # weapon_name → (active_surf, inactive_surf)
+        self._hud_hint_surfs: dict = {}  # weapon_name → surf
+        self._hud_ammo_surfs: dict = {}  # (weapon_name, ammo_value) → surf
+        # Reusable slot rect — updated in-place in draw_ammo_hud
+        self._slot_rect = pygame.Rect(0, 0, slot_w, slot_h)
+
         self._ammo_font = pygame.font.Font("assets/fonts/PressStart2P-Regular.ttf", 8)
         self._label_font = pygame.font.Font("assets/fonts/PressStart2P-Regular.ttf", 7)
+
+        # Pre-render static label and hint surfaces now that fonts are ready
+        for name in ("gun", "spear", "grenade"):
+            key_hint = "F" if name == "gun" else "T"
+            self._hud_label_surfs[name] = (
+                self._label_font.render(name.upper(), True, (200, 220, 255)),  # active
+                self._label_font.render(name.upper(), True, (80, 80, 80)),  # inactive
+            )
+            self._hud_hint_surfs[name] = self._label_font.render(
+                f"[{key_hint}]", True, (120, 120, 160)
+            )
 
     def grant(self, weapon_name):
         """Grant weapon and set ammo. Buying again tops up ammo."""
@@ -411,6 +560,7 @@ class WeaponManager:
             "spear": SPEAR_MAX_AMMO,
         }
         self.ammo[weapon_name] = limits.get(weapon_name, 0)
+        self.weapons_bought += 1
 
     def _has_ammo(self, weapon_name):
         return self.ammo.get(weapon_name, 0) > 0
@@ -421,11 +571,12 @@ class WeaponManager:
             if self.ammo[weapon_name] == 0:
                 self.owned.discard(weapon_name)
 
-    def handle_keydown(self, event_key, player):
+    def handle_keydown(self, event_key, player, enemies=None, boss=None):
         if event_key == pygame.K_f and "gun" in self.owned:
             if self._gun_cooldown <= 0 and self._has_ammo("gun"):
                 bx = player.rect.right if player.facing_right else player.rect.left
-                by = player.rect.centery - 4
+                # Spawn at upper-chest height — well above any platform the player stands on
+                by = player.rect.top + (player.rect.height // 3)
                 self.bullets.append(Bullet(bx, by, player.facing_right))
                 self._use_ammo("gun")
                 self._gun_cooldown = self.GUN_COOLDOWN
@@ -434,13 +585,45 @@ class WeaponManager:
             if self._throw_cooldown <= 0:
                 cx, cy = player.rect.centerx, player.rect.centery
                 if "grenade" in self.owned and self._has_ammo("grenade"):
-                    self.grenades.append(Grenade(cx, cy, player.facing_right))
+                    target = self._find_throw_target(player, enemies, boss)
+                    self.grenades.append(
+                        Grenade(cx, cy, player.facing_right, target=target)
+                    )
                     self._use_ammo("grenade")
                     self._throw_cooldown = self.THROW_COOLDOWN
                 elif "spear" in self.owned and self._has_ammo("spear"):
-                    self.spears.append(Spear(cx, cy, player.facing_right))
+                    target = self._find_throw_target(player, enemies, boss)
+                    self.spears.append(
+                        Spear(cx, cy, player.facing_right, target=target)
+                    )
                     self._use_ammo("spear")
                     self._throw_cooldown = self.THROW_COOLDOWN
+
+    def _find_throw_target(self, player, enemies, boss):
+        """Return (target_x, target_y) of the nearest alive enemy in the facing
+        direction, or None if no enemy is in range (falls back to default arc)."""
+        candidates = []
+        all_enemies = list(enemies) if enemies else []
+        if boss is not None and getattr(boss, "alive", False):
+            all_enemies.append(boss)
+
+        for e in all_enemies:
+            if not getattr(e, "alive", False):
+                continue
+            dx = e.rect.centerx - player.rect.centerx
+            # Must be in the direction the player is facing
+            if player.facing_right and dx <= 0:
+                continue
+            if not player.facing_right and dx >= 0:
+                continue
+            dist_sq = dx * dx + (e.rect.centery - player.rect.centery) ** 2
+            candidates.append((dist_sq, e.rect.centerx, e.rect.centery))
+
+        if not candidates:
+            return None
+        candidates.sort()
+        _, tx, ty = candidates[0]
+        return (tx, ty)
 
     def update(self, ground_segments, platforms):
         if self._gun_cooldown > 0:
@@ -481,9 +664,10 @@ class WeaponManager:
             return
 
         img = self._images[held]
-        # Flip horizontally if facing left
+        # Use pre-cached flipped image — pygame.transform.flip allocates a new
+        # surface every call, so we cache both orientations at load time.
         if not player.facing_right:
-            img = pygame.transform.flip(img, True, False)
+            img = self._images_flipped.get(held, img)
 
         player_draw = camera.apply(player.rect)
         if player.facing_right:
@@ -500,7 +684,6 @@ class WeaponManager:
             return
 
         font = self._ammo_font
-        lfont = self._label_font
 
         panel_x = 10
         panel_y = SCREEN_HEIGHT - 10
@@ -517,44 +700,38 @@ class WeaponManager:
             ammo_left = self.ammo.get(weapon, 0)
             sx = panel_x + i * (slot_w + slot_gap)
             sy = panel_y - slot_h
-
-            # Slot background
-            slot_surf = pygame.Surface((slot_w, slot_h), pygame.SRCALPHA)
-            slot_surf.fill((10, 6, 28, 200))
-            screen.blit(slot_surf, (sx, sy))
-
-            # Border — cyan if active (owned + ammo > 0), grey if empty
             active = weapon in self.owned and ammo_left > 0
-            border_col = (0, 200, 220) if active else (80, 80, 80)
-            pygame.draw.rect(screen, border_col, pygame.Rect(sx, sy, slot_w, slot_h), 2)
 
-            # Weapon icon
-            img = self._images.get(weapon)
-            if img:
-                icon = pygame.transform.scale(img, (28, 28))
-                if not active:
-                    # Desaturate by darkening
-                    dark = icon.copy()
-                    dark.fill((60, 60, 60, 0), special_flags=pygame.BLEND_RGBA_MULT)
-                    icon = dark
+            # Slot background — pre-rendered, no allocation
+            screen.blit(self._slot_bg_surfs[active], (sx, sy))
+
+            # Border — cyan if active, grey if empty
+            border_col = (0, 200, 220) if active else (80, 80, 80)
+            self._slot_rect.x = sx
+            self._slot_rect.y = sy
+            pygame.draw.rect(screen, border_col, self._slot_rect, 2)
+
+            # Weapon icon — pre-scaled and pre-desaturated
+            icon = self._hud_icons.get((weapon, active))
+            if icon:
                 screen.blit(icon, (sx + 4, sy + 4))
 
-            # Weapon label
-            label_surf = lfont.render(
-                weapon.upper(), True, (200, 220, 255) if active else (80, 80, 80)
-            )
+            # Weapon label — pre-rendered for both active states
+            label_surf = self._hud_label_surfs[weapon][0 if active else 1]
             screen.blit(label_surf, (sx + 36, sy + 6))
 
-            # Ammo count
-            ammo_color = (
-                (255, 221, 68)
-                if ammo_left > 5
-                else (255, 140, 0) if ammo_left > 0 else (180, 60, 60)
-            )
-            ammo_surf = font.render(str(ammo_left), True, ammo_color)
+            # Ammo count — cached per (weapon, ammo_value); re-rendered only on change
+            ammo_key = (weapon, ammo_left)
+            ammo_surf = self._hud_ammo_surfs.get(ammo_key)
+            if ammo_surf is None:
+                ammo_color = (
+                    (255, 221, 68)
+                    if ammo_left > 5
+                    else (255, 140, 0) if ammo_left > 0 else (180, 60, 60)
+                )
+                ammo_surf = font.render(str(ammo_left), True, ammo_color)
+                self._hud_ammo_surfs[ammo_key] = ammo_surf
             screen.blit(ammo_surf, (sx + 36, sy + 22))
 
-            # Key hint
-            key = "F" if weapon == "gun" else "T"
-            hint = lfont.render(f"[{key}]", True, (120, 120, 160))
-            screen.blit(hint, (sx + 36, sy + 38))
+            # Key hint — pre-rendered static surface
+            screen.blit(self._hud_hint_surfs[weapon], (sx + 36, sy + 38))

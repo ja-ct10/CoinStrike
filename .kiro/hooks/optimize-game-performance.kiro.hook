@@ -1,0 +1,16 @@
+{
+  "enabled": true,
+  "name": "Optimize Game Performance",
+  "description": "When a Python game file is saved, analyze it for performance issues causing lag and suggest or apply optimizations.",
+  "version": "1",
+  "when": {
+    "type": "fileEdited",
+    "patterns": [
+      "*.py"
+    ]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "A Python game file was just saved. The game is experiencing lag and performance issues. Please analyze the file for common performance bottlenecks such as: inefficient loops, redundant calculations inside game loops, unnecessary object creation per frame, unoptimized collision detection, excessive draw calls, missing sprite groups or dirty rect rendering, and any other patterns that could cause lag. Then apply optimizations directly to the file to improve game performance."
+  }
+}

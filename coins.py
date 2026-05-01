@@ -2,79 +2,140 @@ import pygame
 import random
 from settings import *
 
+# How many coins to place per platform
+COINS_PER_PLATFORM = 3
+# How many coins to place per ground segment (per 100px of width)
+COINS_PER_100PX_GROUND = 2
+
+# Shared coin image — loaded once
+_COIN_IMAGE = None
+
+
+def _get_coin_image():
+    global _COIN_IMAGE
+    if _COIN_IMAGE is None:
+        raw = pygame.image.load("assets/coin.png").convert_alpha()
+        _COIN_IMAGE = pygame.transform.scale(raw, (COIN_WIDTH, COIN_HEIGHT))
+    return _COIN_IMAGE
+
 
 class Coin:
-    def __init__(
-        self,
-        x=None,
-        y=None,
-        player=None,
-        fixed_position=False,
-        platforms=None,
-        ground=None,
-    ):
-        self.image = pygame.image.load("assets/coin.png").convert_alpha()
-        self.image = pygame.transform.scale(self.image, (COIN_WIDTH, COIN_HEIGHT))
+    """A single world coin placed at a fixed position on a surface."""
 
-        self.fixed_position = fixed_position
-        self.platforms = platforms
-        self.ground = ground
+    def __init__(self, x, y):
+        self.image = _get_coin_image()
+        self.rect = pygame.Rect(x, y, COIN_WIDTH, COIN_HEIGHT)
+        self.collected = False
 
-        if fixed_position and x is not None and y is not None:
-            # HUD coin — stays at a fixed screen position
-            self.rect = pygame.Rect(x, y, COIN_WIDTH, COIN_HEIGHT)
-        else:
-            self.rect = pygame.Rect(0, 0, COIN_WIDTH, COIN_HEIGHT)
-            self._place_on_surface()
+    def draw(self, screen, camera):
+        if not self.collected:
+            screen.blit(self.image, camera.apply(self.rect))
 
-    def _place_on_surface(self):
-        """Place the coin on top of a random platform or on the ground."""
-        surfaces = []
 
-        if self.platforms:
-            surfaces.extend(self.platforms)
-        if self.ground:
-            surfaces.append(self.ground)
+def _make_coin_row(surface_rect, count):
+    """Return a list of Coin objects evenly spaced across the surface."""
+    coins = []
+    if count <= 0:
+        return coins
 
-        if surfaces:
-            surface = random.choice(surfaces)
-            margin = 10
-            min_x = surface.rect.left + margin
-            max_x = surface.rect.right - COIN_WIDTH - margin
+    usable_w = surface_rect.width - COIN_WIDTH * 2
+    if usable_w <= 0:
+        # Surface too narrow — place one coin in the centre
+        cx = surface_rect.centerx - COIN_WIDTH // 2
+        cy = surface_rect.top - COIN_HEIGHT - 6
+        return [Coin(cx, cy)]
 
-            if max_x <= min_x:
-                coin_x = surface.rect.centerx - COIN_WIDTH // 2
-            else:
-                coin_x = random.randint(min_x, max_x)
+    # Space coins evenly; cap count so they fit
+    max_fit = max(1, usable_w // (COIN_WIDTH + 4))
+    count = min(count, max_fit)
 
-            # Sit just above the surface top
-            coin_y = surface.rect.top - COIN_HEIGHT - 4
-            self.rect.topleft = (coin_x, coin_y)
-        else:
-            self.rect.topleft = (
-                random.randint(50, SCREEN_WIDTH - 50),
-                random.randint(50, SCREEN_HEIGHT - 150),
-            )
+    if count == 1:
+        positions = [surface_rect.centerx - COIN_WIDTH // 2]
+    else:
+        step = usable_w // (count - 1) if count > 1 else 0
+        start_x = surface_rect.left + COIN_WIDTH
+        positions = [start_x + i * step for i in range(count)]
 
-    def draw(self, screen, player, camera=None, custom_text_position=None, y_offset=0):
-        if self.fixed_position:
-            # HUD coin — no camera offset, always on screen
-            screen.blit(self.image, self.rect)
-            font = pygame.font.Font("assets/fonts/PressStart2P-Regular.ttf", 18)
-            text = font.render(f"{player.coins_collected}", True, (255, 255, 255))
-            if custom_text_position:
-                x, y = custom_text_position
-            else:
-                x = self.rect.right + 5
-                y = self.rect.top
-            screen.blit(text, (x, y + y_offset))
-        else:
-            # World coin — apply camera transform
-            if camera:
-                screen.blit(self.image, camera.apply(self.rect))
-            else:
-                screen.blit(self.image, self.rect)
+    coin_y = surface_rect.top - COIN_HEIGHT - 6
+    for x in positions:
+        coins.append(Coin(x, coin_y))
+    return coins
 
-    def reset_position(self):
-        """Move coin to a new surface position after collection."""
-        self._place_on_surface()
+
+class CoinManager:
+    """
+    Manages all world coins. Coins are placed in neat rows on every platform
+    and ground segment. When WorldManager extends the world, update_surfaces()
+    is called and new coins are generated for the new terrain.
+    """
+
+    def __init__(self, platforms, ground_segments):
+        self.coins = []
+        self._seen_surface_ids = set()
+        self._add_surfaces(platforms, ground_segments)
+
+    # ------------------------------------------------------------------
+    def update_surfaces(self, platforms, ground_segments):
+        """Called by WorldManager when new terrain is added."""
+        self._add_surfaces(platforms, ground_segments)
+        # Remove coins that belong to pruned surfaces (far behind player)
+        # Keep coins that haven't been collected yet — they stay until picked up
+
+    def _add_surfaces(self, platforms, ground_segments):
+        """Generate coin rows for any surface we haven't seen yet."""
+        for surf in platforms:
+            sid = id(surf)
+            if sid in self._seen_surface_ids:
+                continue
+            self._seen_surface_ids.add(sid)
+
+            from platforms import GroundSegment
+
+            count = COINS_PER_PLATFORM
+            self.coins.extend(_make_coin_row(surf.rect, count))
+
+        for surf in ground_segments:
+            sid = id(surf)
+            if sid in self._seen_surface_ids:
+                continue
+            self._seen_surface_ids.add(sid)
+
+            count = max(1, int(surf.rect.width / 100) * COINS_PER_100PX_GROUND)
+            count = min(count, 8)  # cap ground coins
+            self.coins.extend(_make_coin_row(surf.rect, count))
+
+    # ------------------------------------------------------------------
+    def update(self, player):
+        """Check collection for all coins near the player. Returns number collected this frame."""
+        collected = 0
+        # Only check coins within 2 screen-widths of the player — coins further
+        # away can't possibly be touched, so skip them entirely.
+        px = player.rect.centerx
+        cull_dist = SCREEN_WIDTH * 2
+        for coin in self.coins:
+            if coin.collected:
+                continue
+            if abs(coin.rect.centerx - px) > cull_dist:
+                continue
+            if coin.rect.colliderect(player.rect):
+                coin.collected = True
+                player.coins_collected += 1
+                player.coins_earned += 1
+                collected += 1
+        return collected
+
+    def draw(self, screen, camera):
+        # Cull coins outside the visible camera window — avoids blit calls for
+        # coins the player can't see. screen_left/right are world-space bounds.
+        screen_left = -camera.offset_x - COIN_WIDTH
+        screen_right = -camera.offset_x + SCREEN_WIDTH + COIN_WIDTH
+        for coin in self.coins:
+            if screen_left <= coin.rect.x <= screen_right:
+                coin.draw(screen, camera)
+
+    def prune(self, player_world_x, prune_behind):
+        """Remove collected coins and coins far behind the player."""
+        cutoff = player_world_x - prune_behind
+        self.coins = [
+            c for c in self.coins if not c.collected and c.rect.right > cutoff
+        ]
