@@ -652,6 +652,11 @@ class EnemyManager:
         self.boss_spawned = False
         self.boss_defeated = False
 
+        # Track by world-x position instead of Python id() — id() can be reused
+        # after pruning, causing new surfaces to be mistaken for already-seen ones.
+        self._seen_platform_xs: set = set()
+        self._seen_ground_xs: set = set()
+
         # Pre-spawn a few enemies spread across platforms
         self._initial_spawn()
 
@@ -659,18 +664,56 @@ class EnemyManager:
         """Called by WorldManager when new terrain is generated."""
         self.platforms = platforms
         self.ground_segments = ground_segments
+        # Spawn enemies on newly generated platforms and ground segments
+        self._spawn_on_new_surfaces()
+
+    def _spawn_on_new_surfaces(self):
+        """Spawn enemies on platforms and ground segments we haven't seen yet."""
+        # Spawn on new platforms (every 3rd platform)
+        for plat in self.platforms:
+            key = plat.rect.x
+            if key in self._seen_platform_xs:
+                continue
+            self._seen_platform_xs.add(key)
+
+            # Spawn on every 3rd platform (same pattern as initial spawn)
+            if len(self._seen_platform_xs) % 3 == 0:
+                x = plat.rect.centerx - ENEMY_WIDTH // 2
+                y = plat.rect.top - ENEMY_HEIGHT
+                self.enemies.append(Enemy(x, y, home_surface=plat))
+
+        # Spawn on new ground segments (every other segment)
+        for seg in self.ground_segments:
+            key = seg.rect.x
+            if key in self._seen_ground_xs:
+                continue
+            self._seen_ground_xs.add(key)
+
+            # Spawn on every other ground segment (same pattern as initial spawn)
+            if len(self._seen_ground_xs) % 2 == 0:
+                x = seg.rect.left + random.randint(60, max(61, seg.rect.width - 100))
+                y = seg.rect.top - ENEMY_HEIGHT
+                self.enemies.append(Enemy(x, y, home_surface=seg))
 
     def _initial_spawn(self):
+        """Pre-spawn enemies on initial platforms and ground segments."""
         for i, plat in enumerate(self.platforms):
+            # Track this platform as seen
+            self._seen_platform_xs.add(plat.rect.x)
+
             if i % 3 == 2:
                 x = plat.rect.centerx - ENEMY_WIDTH // 2
                 y = plat.rect.top - ENEMY_HEIGHT
                 self.enemies.append(Enemy(x, y, home_surface=plat))
 
-        for seg in self.ground_segments[1::2]:
-            x = seg.rect.left + random.randint(60, max(61, seg.rect.width - 100))
-            y = seg.rect.top - ENEMY_HEIGHT
-            self.enemies.append(Enemy(x, y, home_surface=seg))
+        for i, seg in enumerate(self.ground_segments):
+            # Track this segment as seen
+            self._seen_ground_xs.add(seg.rect.x)
+
+            if i % 2 == 1:  # every other segment (1, 3, 5, ...)
+                x = seg.rect.left + random.randint(60, max(61, seg.rect.width - 100))
+                y = seg.rect.top - ENEMY_HEIGHT
+                self.enemies.append(Enemy(x, y, home_surface=seg))
 
     def _spawn_new(self):
         candidates = [p for p in self.platforms if not p.glitch or p.visible]
@@ -695,8 +738,8 @@ class EnemyManager:
         self.spawn_timer = 0
 
     def update(self, player, health, weapon_manager, difficulty_scaler=None):
-        # Spawn logic — use difficulty-scaled interval if available
-        # No regular enemy spawning during the boss fight
+        # Timer-based spawn logic as fallback — only spawns if no new surfaces
+        # were generated recently. No regular enemy spawning during boss fight.
         if not self.boss_spawned:
             spawn_interval = self.SPAWN_INTERVAL
             if difficulty_scaler is not None:
@@ -705,6 +748,8 @@ class EnemyManager:
             self.spawn_timer += 1
             if self.spawn_timer >= spawn_interval:
                 self.spawn_timer = 0
+                # Fallback spawn: pick a random platform from the current list
+                # This ensures enemies still spawn even if world generation stalls
                 self._spawn_new()
 
         # Apply projectile speed multiplier and update enemies in a single pass
@@ -812,15 +857,16 @@ class EnemyManager:
         """Check if any enemy projectile hit the player."""
         if health.invincible_timer > 0:
             return
-        px = player.rect.x
-        py = player.rect.y
-        pw = player.rect.width
-        ph = player.rect.height
+        # Cache player rect to avoid repeated attribute access
+        player_rect = player.rect
+        # Only check enemies that have projectiles — skip empty lists entirely
         for enemy in self.enemies:
-            if not enemy.projectiles:
+            projectiles = enemy.projectiles
+            if not projectiles:
                 continue
-            for proj in enemy.projectiles:
-                if proj.alive and proj.rect.colliderect(player.rect):
+            # Check only alive projectiles — early exit on first hit
+            for proj in projectiles:
+                if proj.alive and proj.rect.colliderect(player_rect):
                     health.take_damage(proj.DAMAGE)
                     proj._alive = False
                     if not health.game_over:
@@ -830,20 +876,24 @@ class EnemyManager:
     def _check_bullets_boss(self, wm):
         if self.boss is None or not self.boss.alive:
             return
+        boss_rect = self.boss.rect  # cache rect to avoid repeated attribute access
         for bullet in wm.bullets:
-            if bullet.alive and bullet.rect.colliderect(self.boss.rect):
+            if bullet.alive and bullet.rect.colliderect(boss_rect):
                 self.boss.take_hit(10)  # 3× normal bullet damage during boss fight
                 bullet.alive = False
 
     def _check_grenades_boss(self, wm):
         if self.boss is None or not self.boss.alive:
             return
+        # Cache boss position to avoid repeated attribute access
+        boss_cx = self.boss.rect.centerx
+        boss_cy = self.boss.rect.centery
+        radius_sq = 90 * 90  # EXPLOSION_RADIUS squared — inline constant
         for grenade in wm.grenades:
             if not grenade.exploding:
                 continue
-            dx = self.boss.rect.centerx - grenade.x
-            dy = self.boss.rect.centery - grenade.y
-            radius_sq = grenade.EXPLOSION_RADIUS * grenade.EXPLOSION_RADIUS
+            dx = boss_cx - grenade.x
+            dy = boss_cy - grenade.y
             if dx * dx + dy * dy <= radius_sq:
                 self.boss.take_hit(18)  # 3× normal grenade damage during boss fight
 
@@ -864,10 +914,13 @@ class EnemyManager:
     def draw(self, screen, camera):
         # Cull enemies that are entirely off-screen — avoids all the procedural
         # draw calls (circles, ellipses, polygons) for enemies the player can't see.
-        screen_left = -camera.offset_x - ENEMY_WIDTH
-        screen_right = -camera.offset_x + SCREEN_WIDTH + ENEMY_WIDTH
+        # Cache camera offset to avoid repeated attribute access
+        cam_offset_x = camera.offset_x
+        screen_left = -cam_offset_x - ENEMY_WIDTH
+        screen_right = -cam_offset_x + SCREEN_WIDTH + ENEMY_WIDTH
         for enemy in self.enemies:
-            if screen_left <= enemy.rect.x <= screen_right:
+            enemy_x = enemy.rect.x
+            if screen_left <= enemy_x <= screen_right:
                 enemy.draw(screen, camera)
         # Draw boss if present
         if self.boss is not None:
@@ -1043,8 +1096,13 @@ class FinalBoss(Enemy):
         for proj in self.projectiles:
             proj.update(ground_segments, platforms)
         # Prune dead projectiles — only rebuild list when there are dead ones
-        if any(not p.alive for p in self.projectiles):
+        # Check first projectile as a heuristic — if it's alive, likely all are
+        if self.projectiles and not self.projectiles[0].alive:
             self.projectiles = [p for p in self.projectiles if p.alive]
+        elif len(self.projectiles) > 1:
+            # Fallback: check if any are dead (rare case where first is alive but others aren't)
+            if any(not p.alive for p in self.projectiles):
+                self.projectiles = [p for p in self.projectiles if p.alive]
 
         # --- Walk animation ---
         self.anim_timer += 1
@@ -1055,12 +1113,21 @@ class FinalBoss(Enemy):
         # --- Particles / hit flashes ---
         for p in self.particles:
             p.update()
-        if any(not p.alive for p in self.particles):
+        # Only rebuild particles list if there are dead ones — check first as heuristic
+        if self.particles and not self.particles[0].alive:
             self.particles = [p for p in self.particles if p.alive]
+        elif len(self.particles) > 1:
+            if any(not p.alive for p in self.particles):
+                self.particles = [p for p in self.particles if p.alive]
+
         for f in self.hit_flashes:
             f.update()
-        if any(not f.alive for f in self.hit_flashes):
+        # Only rebuild flashes list if there are dead ones — check first as heuristic
+        if self.hit_flashes and not self.hit_flashes[0].alive:
             self.hit_flashes = [f for f in self.hit_flashes if f.alive]
+        elif len(self.hit_flashes) > 1:
+            if any(not f.alive for f in self.hit_flashes):
+                self.hit_flashes = [f for f in self.hit_flashes if f.alive]
 
     def _has_surface_at(self, probe_x, foot_y, ground_segments, platforms):
         """Return True if there is solid ground/platform under probe_x at foot_y.
@@ -1068,19 +1135,20 @@ class FinalBoss(Enemy):
         Performance: iterates only segments whose x-range overlaps probe_x,
         which is O(n) but with an early-exit on the first hit.
         """
+        # Check ground segments first — they're more common and wider
         for seg in ground_segments:
-            if (
-                seg.rect.left <= probe_x <= seg.rect.right
-                and seg.rect.top <= foot_y <= seg.rect.bottom
-            ):
-                return True
+            seg_rect = seg.rect
+            if seg_rect.left <= probe_x <= seg_rect.right:
+                if seg_rect.top <= foot_y <= seg_rect.bottom:
+                    return True
+        # Check platforms only if no ground found
         for p in platforms:
-            if (
-                p.visible
-                and p.rect.left <= probe_x <= p.rect.right
-                and p.rect.top <= foot_y <= p.rect.bottom + 20
-            ):
-                return True
+            if not p.visible:
+                continue
+            p_rect = p.rect
+            if p_rect.left <= probe_x <= p_rect.right:
+                if p_rect.top <= foot_y <= p_rect.bottom + 20:
+                    return True
         return False
 
     def _chase_on_ground(self, player, ground_segments, platforms):
@@ -1093,7 +1161,9 @@ class FinalBoss(Enemy):
         """
         speed = self.CHASE_SPEED
 
-        if player.rect.centerx > self.rect.centerx:
+        # Cache player center to avoid repeated attribute access
+        player_cx = player.rect.centerx
+        if player_cx > self.rect.centerx:
             direction = 1
             self.facing_right = True
         else:

@@ -69,7 +69,7 @@ class Health:
         self._regen_accumulator = 0.0
 
     # ------------------------------------------------------------------
-    def update(self, player, ground_segments):
+    def update(self, player, ground_segments, platforms=None):
         if self.game_over:
             return False
 
@@ -89,7 +89,10 @@ class Health:
                     self.hp = min(self.max_hp, self.hp + whole)
                     self._regen_accumulator -= whole
 
-        # Update respawn checkpoint — last safe ground position
+        # Update respawn checkpoint — last safe surface (ground segment or platform)
+        checkpoint_updated = False
+
+        # Check ground segments first
         for seg in ground_segments:
             if (
                 player.rect.bottom >= seg.rect.top - 4
@@ -99,7 +102,26 @@ class Health:
             ):
                 self.respawn_x = player.rect.x
                 self.respawn_y = seg.rect.top - PLAYER_HEIGHT
+                checkpoint_updated = True
                 break
+
+        # Also check platforms — so falling from a platform respawns there, not
+        # at a distant ground segment. Skip invisible (gone) glitch platforms.
+        if not checkpoint_updated and platforms is not None:
+            for plat in platforms:
+                # Direct attribute access — all Platform objects have .visible;
+                # avoids getattr() overhead in a per-frame hot loop.
+                if not plat.visible:
+                    continue
+                if (
+                    player.rect.bottom >= plat.rect.top - 4
+                    and player.rect.bottom <= plat.rect.top + 20
+                    and player.rect.right >= plat.rect.left
+                    and player.rect.left <= plat.rect.right
+                ):
+                    self.respawn_x = player.rect.x
+                    self.respawn_y = plat.rect.top - PLAYER_HEIGHT
+                    break
 
         # Detect fall into pit
         if player.rect.top > FALL_THRESHOLD and self.invincible_timer == 0:
@@ -156,8 +178,12 @@ class Health:
             if shine_surf is None:
                 shine_surf = pygame.Surface((sw, BAR_H // 3), pygame.SRCALPHA)
                 shine_surf.fill((255, 255, 255, 40))
+                # Partial eviction — evict oldest quarter to avoid a cold-cache
+                # spike on the next frame (same pattern used across the codebase).
                 if len(_SHINE_SURF_CACHE) > 210:
-                    _SHINE_SURF_CACHE.clear()
+                    evict = list(_SHINE_SURF_CACHE.keys())[:52]
+                    for k in evict:
+                        del _SHINE_SURF_CACHE[k]
                 _SHINE_SURF_CACHE[sw] = shine_surf
             screen.blit(shine_surf, (BAR_X + 2, BAR_Y + 2))
 
@@ -168,7 +194,9 @@ class Health:
                 pulse = pygame.Surface((fill_w, BAR_H), pygame.SRCALPHA)
                 pulse.fill((0, 220, 255, 35))
                 if len(_PULSE_SURF_CACHE) > 210:
-                    _PULSE_SURF_CACHE.clear()
+                    evict = list(_PULSE_SURF_CACHE.keys())[:52]
+                    for k in evict:
+                        del _PULSE_SURF_CACHE[k]
                 _PULSE_SURF_CACHE[fill_w] = pulse
             screen.blit(pulse, (BAR_X, BAR_Y))
 
@@ -222,6 +250,10 @@ _GO_SUB_SURF: pygame.Surface | None = None
 _GO_BTN_SURFS: dict = {}  # (label, is_hover) → Surface
 # Cache for the flashing title — keyed by flash_on bool (only 2 states)
 _GO_TITLE_SURFS: dict = {}  # flash_on → Surface
+# Pre-allocated reusable rects for draw_game_over — updated in-place each call
+_GO_BORDER_RECT = pygame.Rect(0, 0, 0, 0)
+_GO_INNER_RECT = pygame.Rect(0, 0, 0, 0)
+_GO_CORNER_RECT = pygame.Rect(0, 0, 6, 6)
 
 
 def _ensure_go_resources():
@@ -257,17 +289,19 @@ def draw_game_over(screen, mouse_pos, flash_timer):
     screen.blit(_GO_OVERLAY, (0, 0))
     screen.blit(_GO_MODAL_SURF, (modal_x, modal_y))
 
+    _GO_BORDER_RECT.update(modal_x, modal_y, modal_w, modal_h)
     pygame.draw.rect(
         screen,
         (200, 0, 80),
-        pygame.Rect(modal_x, modal_y, modal_w, modal_h),
+        _GO_BORDER_RECT,
         3,
         border_radius=10,
     )
+    _GO_INNER_RECT.update(modal_x + 4, modal_y + 4, modal_w - 8, modal_h - 8)
     pygame.draw.rect(
         screen,
         (255, 60, 120),
-        pygame.Rect(modal_x + 4, modal_y + 4, modal_w - 8, modal_h - 8),
+        _GO_INNER_RECT,
         1,
         border_radius=8,
     )
@@ -278,7 +312,8 @@ def draw_game_over(screen, mouse_pos, flash_timer):
         (modal_x, modal_y + modal_h - 6),
         (modal_x + modal_w - 6, modal_y + modal_h - 6),
     ]:
-        pygame.draw.rect(screen, (255, 60, 120), pygame.Rect(cx, cy, 6, 6))
+        _GO_CORNER_RECT.topleft = (cx, cy)
+        pygame.draw.rect(screen, (255, 60, 120), _GO_CORNER_RECT)
 
     flash_on = (flash_timer // 20) % 2 == 0
     title_surf = _GO_TITLE_SURFS[flash_on]

@@ -71,34 +71,33 @@ class CoinManager:
 
     def __init__(self, platforms, ground_segments):
         self.coins = []
-        self._seen_surface_ids = set()
+        # Track by world-x position instead of Python id() — id() can be reused
+        # after pruning, causing new surfaces to be mistaken for already-seen ones.
+        self._seen_platform_xs: set = set()
+        self._seen_ground_xs: set = set()
         self._add_surfaces(platforms, ground_segments)
 
     # ------------------------------------------------------------------
     def update_surfaces(self, platforms, ground_segments):
         """Called by WorldManager when new terrain is added."""
         self._add_surfaces(platforms, ground_segments)
-        # Remove coins that belong to pruned surfaces (far behind player)
-        # Keep coins that haven't been collected yet — they stay until picked up
 
     def _add_surfaces(self, platforms, ground_segments):
         """Generate coin rows for any surface we haven't seen yet."""
         for surf in platforms:
-            sid = id(surf)
-            if sid in self._seen_surface_ids:
+            key = surf.rect.x
+            if key in self._seen_platform_xs:
                 continue
-            self._seen_surface_ids.add(sid)
-
-            from platforms import GroundSegment
+            self._seen_platform_xs.add(key)
 
             count = COINS_PER_PLATFORM
             self.coins.extend(_make_coin_row(surf.rect, count))
 
         for surf in ground_segments:
-            sid = id(surf)
-            if sid in self._seen_surface_ids:
+            key = surf.rect.x
+            if key in self._seen_ground_xs:
                 continue
-            self._seen_surface_ids.add(sid)
+            self._seen_ground_xs.add(key)
 
             count = max(1, int(surf.rect.width / 100) * COINS_PER_100PX_GROUND)
             count = min(count, 8)  # cap ground coins

@@ -3,7 +3,7 @@ import random
 from settings import *
 
 PANEL_W = 260
-PANEL_H = 100
+PANEL_H = 120  # Increased from 100 to ensure all 3 missions fit comfortably
 PANEL_Y = 10
 PANEL_X = SCREEN_WIDTH - PANEL_W - 10 - SETTINGS_WIDTH - 8
 
@@ -28,9 +28,9 @@ _MISSION_POOL = [
     ("weapons", "Buy {target} weapon(s)", 2),
     ("weapons", "Buy {target} weapon(s)", 3),
     # Survival missions (reach a distance)
-    ("distance", "Travel {target}m", 500),
-    ("distance", "Travel {target}m", 1000),
-    ("distance", "Travel {target}m", 2000),
+    ("distance", "Travel {target}m", 150),
+    ("distance", "Travel {target}m", 300),
+    ("distance", "Travel {target}m", 450),
 ]
 
 
@@ -80,29 +80,61 @@ class Mission:
         self._bg_surf.fill((8, 6, 28, 220))
         self._title_surf = self.font_title.render("MISSIONS", True, (255, 221, 68))
 
-        # Cache for mission line surfaces — keyed by (text_string, done)
+        # Cache for mission line surfaces — keyed by (mission_index, progress, done)
+        # Using mission index instead of full text reduces key size and comparison cost
         self._line_cache: dict = {}
 
+        # Pre-render static mission text parts (without progress) — never change
+        self._mission_text_base: list = [m["text"] for m in self.missions]
+
+        # Track previous progress and done state to avoid redundant cache lookups
+        # Initialize to None so first draw always triggers rendering
+        self._prev_progress: list = [None, None, None]
+        self._prev_done: list = [False, False, False]
+
+        # Pre-render all mission lines on initialization so they appear immediately
+        for i, m in enumerate(self.missions):
+            text = f"{self._mission_text_base[i]} ({m['progress']}/{m['target']})"
+            color = (200, 220, 255)  # Initial color (not done yet)
+            surf = self.font_line.render(text, True, color)
+            cache_key = (i, m["progress"], m["done"])
+            self._line_cache[cache_key] = surf
+            self._prev_progress[i] = m["progress"]
+            self._prev_done[i] = m["done"]
+
     def update(self, player, enemy_manager, weapon_manager):
+        # Early exit if all missions already complete — avoid redundant checks
+        if self.all_completed:
+            return
+
+        any_changed = False
         for m in self.missions:
             if m["done"]:
                 continue
 
             mtype = m["type"]
+            # Direct attribute access — faster than getattr with defaults
             if mtype == "coins":
-                m["progress"] = getattr(player, "coins_earned", 0)
+                new_progress = player.coins_earned
             elif mtype == "kills":
-                m["progress"] = getattr(enemy_manager, "enemies_killed", 0)
+                new_progress = enemy_manager.enemies_killed
             elif mtype == "weapons":
-                m["progress"] = getattr(weapon_manager, "weapons_bought", 0)
+                new_progress = weapon_manager.weapons_bought
             elif mtype == "distance":
                 # Convert world_x pixels to metres (100 px ≈ 1 m)
-                m["progress"] = int(getattr(player, "world_x", 0) // 100)
+                new_progress = int(player.world_x // 100)
+            else:
+                new_progress = 0
 
-            if m["progress"] >= m["target"]:
+            m["progress"] = new_progress
+
+            if new_progress >= m["target"]:
                 m["done"] = True
+                any_changed = True
 
-        self.all_completed = all(m["done"] for m in self.missions)
+        # Only check all_completed when a mission state changed
+        if any_changed:
+            self.all_completed = all(m["done"] for m in self.missions)
 
     def draw(self, screen):
         px = PANEL_X
@@ -118,12 +150,35 @@ class Mission:
 
         line_y = py + 32
         for i, m in enumerate(self.missions):
-            text = f"{m['text']} ({m['progress']}/{m['target']})"
+            progress = m["progress"]
             done = m["done"]
-            cache_key = (text, done)
-            surf = self._line_cache.get(cache_key)
-            if surf is None:
+
+            # Only re-render if progress or done state changed
+            if progress != self._prev_progress[i] or done != self._prev_done[i]:
+                text = f"{self._mission_text_base[i]} ({progress}/{m['target']})"
                 color = (0, 255, 120) if done else (200, 220, 255)
                 surf = self.font_line.render(text, True, color)
+
+                # Use mission index as cache key — much faster than string comparison
+                cache_key = (i, progress, done)
                 self._line_cache[cache_key] = surf
-            screen.blit(surf, (px + 10, line_y + i * 20))
+                self._prev_progress[i] = progress
+                self._prev_done[i] = done
+
+                # Bounded cache: evict old entries only when cache grows too large
+                # Move eviction outside the hot path by checking size less frequently
+                if len(self._line_cache) > 15:  # 3 missions × 5 entries each (buffer)
+                    # Evict oldest entries for this specific mission only
+                    mission_keys = [k for k in self._line_cache.keys() if k[0] == i]
+                    if len(mission_keys) > 5:
+                        # Sort by progress value (k[1]) to find oldest
+                        mission_keys.sort(key=lambda k: k[1])
+                        # Keep only the 3 most recent entries for this mission
+                        for k in mission_keys[:-3]:
+                            del self._line_cache[k]
+
+            # Retrieve from cache — cache_key is already computed above or from previous frame
+            cache_key = (i, progress, done)
+            surf = self._line_cache.get(cache_key)
+            if surf:
+                screen.blit(surf, (px + 10, line_y + i * 20))
