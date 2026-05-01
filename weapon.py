@@ -525,7 +525,7 @@ class WeaponManager:
             ("grenade", "assets/grenade.png"),
         ]:
             try:
-                img = pygame.image.load(path).convert_alpha()
+                img = pygame.image.load(resource_path(path)).convert_alpha()
                 self._images[name] = pygame.transform.scale(img, (36, 36))
             except Exception:
                 self._images[name] = None
@@ -568,8 +568,12 @@ class WeaponManager:
         # Reusable slot rect — updated in-place in draw_ammo_hud
         self._slot_rect = pygame.Rect(0, 0, slot_w, slot_h)
 
-        self._ammo_font = pygame.font.Font(resource_path("assets/fonts/PressStart2P-Regular.ttf"), 8)
-        self._label_font = pygame.font.Font(resource_path("assets/fonts/PressStart2P-Regular.ttf"), 7)
+        self._ammo_font = pygame.font.Font(
+            resource_path("assets/fonts/PressStart2P-Regular.ttf"), 8
+        )
+        self._label_font = pygame.font.Font(
+            resource_path("assets/fonts/PressStart2P-Regular.ttf"), 7
+        )
 
         # Pre-render static label and hint surfaces now that fonts are ready
         for name in ("gun", "spear", "grenade"):

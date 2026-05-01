@@ -968,7 +968,7 @@ class FinalBoss(Enemy):
     def _get_label_font(cls) -> pygame.font.Font:
         if cls._label_font is None:
             cls._label_font = pygame.font.Font(
-                "assets/fonts/PressStart2P-Regular.ttf", 7
+                resource_path("assets/fonts/PressStart2P-Regular.ttf"), 7
             )
         return cls._label_font
 

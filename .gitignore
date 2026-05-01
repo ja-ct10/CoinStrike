@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Build artifacts
+build/
+dist/
+*.spec
+*.exe
+*.pkg
+*.toc
+*.pyz
+*.zip
+
+# Release folders
+CoinStrike_release/
+obfuscated/
+
+# Security
+file_manifest.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
