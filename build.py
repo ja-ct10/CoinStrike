@@ -46,6 +46,7 @@ CRITICAL_FILES = [
     "menu.py",
     "settings.py",
     "security.py",
+    "utils.py",
 ]
 
 # PyInstaller spec file

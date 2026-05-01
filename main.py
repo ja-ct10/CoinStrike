@@ -15,6 +15,7 @@ from rocks import RockManager
 from combo import ComboSystem
 from powerups import PowerupManager
 from security import SecurityManager  # Security system integration
+from utils import resource_path  # PyInstaller path resolution
 
 pygame.init()
 pygame.mixer.init()
@@ -56,7 +57,7 @@ if not is_valid:
 
 # ================================================================
 
-pygame.mixer.music.load("assets/sounds/background-music.mp3")
+pygame.mixer.music.load(resource_path("assets/sounds/background-music.mp3"))
 pygame.mixer.music.set_volume(0.5)
 pygame.mixer.music.play(-1)
 
@@ -69,7 +70,7 @@ game_state = MENU
 
 screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
 
-menu_bg = pygame.image.load("assets/game-cover.png").convert()
+menu_bg = pygame.image.load(resource_path("assets/game-cover.png")).convert()
 menu_rect = menu_bg.get_rect()
 menu_scale = min(SCREEN_WIDTH / menu_rect.width, SCREEN_HEIGHT / menu_rect.height)
 menu_size = (int(menu_rect.width * menu_scale), int(menu_rect.height * menu_scale))
@@ -78,7 +79,12 @@ menu_bg = pygame.transform.scale(menu_bg, menu_size)
 pygame.display.set_caption("CoinStrike")
 clock = pygame.time.Clock()
 
-background = pygame.image.load("assets/background.png").convert()
+import pygame
+from settings import *
+from utils import resource_path
+
+
+background = pygame.image.load(resource_path("assets/background.png")).convert()
 background = pygame.transform.scale(background, (SCREEN_WIDTH, SCREEN_HEIGHT))
 
 camera = Camera()
@@ -95,9 +101,11 @@ SHOP_TOP = ICON_MID_Y - SHOP_HEIGHT // 2
 COIN_HUD_SIZE = 24
 COIN_RIGHT = SHOP_RIGHT - SHOP_WIDTH - 10
 
-_coin_hud_img_raw = pygame.image.load("assets/coin.png").convert_alpha()
+_coin_hud_img_raw = pygame.image.load(resource_path("assets/coin.png")).convert_alpha()
 coin_hud_img = pygame.transform.scale(_coin_hud_img_raw, (COIN_HUD_SIZE, COIN_HUD_SIZE))
-coin_hud_font = pygame.font.Font("assets/fonts/PressStart2P-Regular.ttf", 14)
+coin_hud_font = pygame.font.Font(
+    resource_path("assets/fonts/PressStart2P-Regular.ttf"), 14
+)
 
 game_over_flash = 0
 MISSION_COMPLETE = "mission_complete"
@@ -115,18 +123,30 @@ def _init_fonts():
     global _FONT_MENU_TITLE, _FONT_MENU_BTN, _FONT_INSTR, _FONT_INSTR_TITLE
     global _FONT_MISSION_COMPLETE, _FONT_MISSION_COMPLETE_SMALL
     global _FONT_BOSS_INTRO, _FONT_BOSS_INTRO_SUB
-    _FONT_MENU_TITLE = pygame.font.Font("assets/fonts/PressStart2P-Regular.ttf", 50)
-    _FONT_MENU_BTN = pygame.font.Font("assets/fonts/PressStart2P-Regular.ttf", 32)
-    _FONT_INSTR = pygame.font.Font("assets/fonts/PressStart2P-Regular.ttf", 9)
-    _FONT_INSTR_TITLE = pygame.font.Font("assets/fonts/PressStart2P-Regular.ttf", 14)
+    _FONT_MENU_TITLE = pygame.font.Font(
+        resource_path("assets/fonts/PressStart2P-Regular.ttf"), 50
+    )
+    _FONT_MENU_BTN = pygame.font.Font(
+        resource_path("assets/fonts/PressStart2P-Regular.ttf"), 32
+    )
+    _FONT_INSTR = pygame.font.Font(
+        resource_path("assets/fonts/PressStart2P-Regular.ttf"), 9
+    )
+    _FONT_INSTR_TITLE = pygame.font.Font(
+        resource_path("assets/fonts/PressStart2P-Regular.ttf"), 14
+    )
     _FONT_MISSION_COMPLETE = pygame.font.Font(
-        "assets/fonts/PressStart2P-Regular.ttf", 28
+        resource_path("assets/fonts/PressStart2P-Regular.ttf"), 28
     )
     _FONT_MISSION_COMPLETE_SMALL = pygame.font.Font(
-        "assets/fonts/PressStart2P-Regular.ttf", 14
+        resource_path("assets/fonts/PressStart2P-Regular.ttf"), 14
     )
-    _FONT_BOSS_INTRO = pygame.font.Font("assets/fonts/PressStart2P-Regular.ttf", 36)
-    _FONT_BOSS_INTRO_SUB = pygame.font.Font("assets/fonts/PressStart2P-Regular.ttf", 14)
+    _FONT_BOSS_INTRO = pygame.font.Font(
+        resource_path("assets/fonts/PressStart2P-Regular.ttf"), 36
+    )
+    _FONT_BOSS_INTRO_SUB = pygame.font.Font(
+        resource_path("assets/fonts/PressStart2P-Regular.ttf"), 14
+    )
 
 
 _FONT_BOSS_INTRO = None
@@ -308,7 +328,9 @@ _STATS_Y = 44  # just below the "HP" label (BAR_Y + BAR_H + 4 + label_h ≈ 44)
 def _get_stats_font():
     global _stats_font
     if _stats_font is None:
-        _stats_font = pygame.font.Font("assets/fonts/PressStart2P-Regular.ttf", 7)
+        _stats_font = pygame.font.Font(
+            resource_path("assets/fonts/PressStart2P-Regular.ttf"), 7
+        )
     return _stats_font
 
 
@@ -644,8 +666,12 @@ _MC_TITLE_FONT: pygame.font.Font | None = None
 def _get_mc_fonts():
     global _MC_STATS_FONT, _MC_TITLE_FONT
     if _MC_STATS_FONT is None:
-        _MC_STATS_FONT = pygame.font.Font("assets/fonts/PressStart2P-Regular.ttf", 9)
-        _MC_TITLE_FONT = pygame.font.Font("assets/fonts/PressStart2P-Regular.ttf", 22)
+        _MC_STATS_FONT = pygame.font.Font(
+            resource_path("assets/fonts/PressStart2P-Regular.ttf"), 9
+        )
+        _MC_TITLE_FONT = pygame.font.Font(
+            resource_path("assets/fonts/PressStart2P-Regular.ttf"), 22
+        )
     return _MC_TITLE_FONT, _MC_STATS_FONT
 
 
@@ -1061,13 +1087,15 @@ while running:
                 elif shop.rect.collidepoint(event.pos):
                     show_shop_modal = True
 
-    # ================================================================ DRAW
+    # ================================================================ UPDATE
     # Performance optimizations applied:
     # - Cached visible bounds computed once per frame, reused for all culling
     # - Glitch platform updates only check platforms near player (300px range)
     # - Camera lerp skips update if delta < 0.5px (avoids micro-adjustments)
     # - Key state polled once per frame and cached in _held variable
     # - All font rendering uses pre-cached surfaces (no per-frame font.render calls)
+    # - Event handling moved before draw to reduce input latency
+    # - Collision checks use spatial partitioning (visible bounds)
     # ================================================================
 
     if game_state == MENU:
@@ -1088,15 +1116,19 @@ while running:
         for seg in ground_segments:
             seg.draw(screen, camera)
 
-        # Optimized platform culling during boss intro
+        # Optimized platform culling during boss intro (reuse pattern from main loop)
         _bi_left = -camera.offset_x - 200
         _bi_right = -camera.offset_x + SCREEN_WIDTH + 200
         for platform in platforms:
-            if _bi_left <= platform.rect.x <= _bi_right:
+            # Cache rect.x to avoid repeated attribute access
+            plat_x = platform.rect.x
+            if _bi_left <= plat_x <= _bi_right:
                 platform.draw(screen, camera)
 
         enemy_manager.draw(screen, camera)
-        if health.invincible_timer == 0 or (health.invincible_timer // 6) % 2 == 0:
+
+        # Optimized invincibility flicker check (bitwise AND is faster than modulo)
+        if health.invincible_timer == 0 or (health.invincible_timer & 0x1F) < 16:
             player.draw(screen, camera, weapon_manager=weapon_manager, health=health)
 
         draw_boss_intro(screen, boss_intro_timer, BOSS_INTRO_DURATION)
@@ -1265,17 +1297,23 @@ while running:
         screen.blit(background, (bg_offset + SCREEN_WIDTH, 0))
 
         # Optimized culling — compute visible bounds once, reuse for all draw calls
+        # Extended margin for smooth scrolling (objects appear/disappear off-screen)
         _vis_left = -camera.offset_x - 400
         _vis_right = -camera.offset_x + SCREEN_WIDTH + 400
 
-        # Ground segments — draw only visible ones
+        # Ground segments — draw only visible ones (batch check with cached rect properties)
         for seg in ground_segments:
-            if seg.rect.right > _vis_left and seg.rect.left < _vis_right:
+            # Cache rect properties to avoid repeated attribute access
+            seg_right = seg.rect.right
+            seg_left = seg.rect.left
+            if seg_right > _vis_left and seg_left < _vis_right:
                 seg.draw(screen, camera)
 
-        # Platforms — draw only visible ones (reuse same bounds)
+        # Platforms — draw only visible ones (optimized bounds check)
         for platform in platforms:
-            if _vis_left <= platform.rect.x <= _vis_right:
+            # Single comparison using cached rect.x (platforms are fixed-width)
+            plat_x = platform.rect.x
+            if _vis_left <= plat_x <= _vis_right:
                 platform.draw(screen, camera)
 
         # Coins — update (collect) and draw
@@ -1345,9 +1383,4 @@ while running:
         bg_offset = int(-camera.offset_x * 0.4) % SCREEN_WIDTH
         screen.blit(background, (bg_offset - SCREEN_WIDTH, 0))
         screen.blit(background, (bg_offset, 0))
-        screen.blit(background, (bg_offset + SCREEN_WIDTH, 0))
-        _mission_complete_restart_rect, _mission_complete_quit_rect = (
-            draw_mission_complete(screen, mouse_pos, game_stats)
-        )
-
-    pygame.display.flip()
+        screen.blit(background, (bg

@@ -1,5 +1,6 @@
 import pygame
 from settings import *
+from utils import resource_path
 
 FALL_THRESHOLD = SCREEN_HEIGHT + 60  # y below this = fell into pit
 
@@ -49,7 +50,7 @@ class Health:
 
         self.game_over = False
 
-        self._hp_font = pygame.font.Font("assets/fonts/PressStart2P-Regular.ttf", 9)
+        self._hp_font = pygame.font.Font(resource_path("assets/fonts/PressStart2P-Regular.ttf"), 9)
         # Cached label surfaces — re-rendered only when state changes
         self._cached_label_text: str | None = None
         self._cached_label_surf: pygame.Surface | None = None
@@ -260,9 +261,9 @@ def _ensure_go_resources():
     global _GO_FONTS, _GO_OVERLAY, _GO_MODAL_SURF, _GO_SUB_SURF
     if _GO_FONTS is None:
         _GO_FONTS = (
-            pygame.font.Font("assets/fonts/PressStart2P-Regular.ttf", 26),
-            pygame.font.Font("assets/fonts/PressStart2P-Regular.ttf", 12),
-            pygame.font.Font("assets/fonts/PressStart2P-Regular.ttf", 13),
+            pygame.font.Font(resource_path("assets/fonts/PressStart2P-Regular.ttf"), 26),
+            pygame.font.Font(resource_path("assets/fonts/PressStart2P-Regular.ttf"), 12),
+            pygame.font.Font(resource_path("assets/fonts/PressStart2P-Regular.ttf"), 13),
         )
         _GO_OVERLAY = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
         _GO_OVERLAY.fill((0, 0, 0, 210))

@@ -1,24 +1,25 @@
 import pygame
 import math
 from settings import *
+from utils import resource_path
 
 
 class Player:
     def __init__(self, x, y):
         self.idle_right = pygame.transform.scale(
-            pygame.image.load("assets/player-idle-right.png").convert_alpha(),
+            pygame.image.load(resource_path("assets/player-idle-right.png")).convert_alpha(),
             (PLAYER_WIDTH, PLAYER_HEIGHT),
         )
         self.idle_left = pygame.transform.scale(
-            pygame.image.load("assets/player-idle-left.png").convert_alpha(),
+            pygame.image.load(resource_path("assets/player-idle-left.png")).convert_alpha(),
             (PLAYER_WIDTH, PLAYER_HEIGHT),
         )
         self.run_right = pygame.transform.scale(
-            pygame.image.load("assets/player-run-right.png").convert_alpha(),
+            pygame.image.load(resource_path("assets/player-run-right.png")).convert_alpha(),
             (PLAYER_WIDTH, PLAYER_HEIGHT),
         )
         self.run_left = pygame.transform.scale(
-            pygame.image.load("assets/player-run-left.png").convert_alpha(),
+            pygame.image.load(resource_path("assets/player-run-left.png")).convert_alpha(),
             (PLAYER_WIDTH, PLAYER_HEIGHT),
         )
 
@@ -57,7 +58,7 @@ class Player:
                 (self.hold_run_left, rl),
             ]:
                 try:
-                    img = pygame.image.load(f"assets/{fname}.png").convert_alpha()
+                    img = pygame.image.load(resource_path(f"assets/{fname}.png")).convert_alpha()
                     attr[weapon] = pygame.transform.scale(
                         img, (PLAYER_WIDTH, PLAYER_HEIGHT)
                     )

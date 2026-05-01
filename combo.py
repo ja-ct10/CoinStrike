@@ -1,4 +1,5 @@
 import pygame
+from utils import resource_path
 
 
 class ComboSystem:
@@ -12,8 +13,8 @@ class ComboSystem:
         self.inactivity_timer = 0
         self.buff_timer = 0
         self._last_kills = 0  # tracks cumulative kill delta for main.py combo wiring
-        self._font = pygame.font.Font("assets/fonts/PressStart2P-Regular.ttf", 14)
-        self._small_font = pygame.font.Font("assets/fonts/PressStart2P-Regular.ttf", 9)
+        self._font = pygame.font.Font(resource_path("assets/fonts/PressStart2P-Regular.ttf"), 14)
+        self._small_font = pygame.font.Font(resource_path("assets/fonts/PressStart2P-Regular.ttf"), 9)
 
         # --- render cache ---
         # Cached label surfaces keyed by (label_text, color) so font.render()

@@ -1,6 +1,7 @@
 import pygame
 import math
 from settings import SCREEN_WIDTH, SCREEN_HEIGHT
+from utils import resource_path
 
 
 def draw_menu(screen, menu_selection):
@@ -12,7 +13,7 @@ def draw_menu(screen, menu_selection):
     for i in range(0, SCREEN_WIDTH, 20):
         pygame.draw.line(screen, (0, 50, 100, 50), (i, 0), (i, SCREEN_HEIGHT))
 
-    font = pygame.font.Font("assets/fonts/PressStart2P-Regular.ttf", 44)
+    font = pygame.font.Font(resource_path("assets/fonts/PressStart2P-Regular.ttf"), 44)
 
     # Title
     title = font.render("COINSTRIKE", True, (255, 255, 255))

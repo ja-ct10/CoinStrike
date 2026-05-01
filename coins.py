@@ -1,6 +1,7 @@
 import pygame
 import random
 from settings import *
+from utils import resource_path
 
 # How many coins to place per platform
 COINS_PER_PLATFORM = 3
@@ -14,7 +15,7 @@ _COIN_IMAGE = None
 def _get_coin_image():
     global _COIN_IMAGE
     if _COIN_IMAGE is None:
-        raw = pygame.image.load("assets/coin.png").convert_alpha()
+        raw = pygame.image.load(resource_path("assets/coin.png")).convert_alpha()
         _COIN_IMAGE = pygame.transform.scale(raw, (COIN_WIDTH, COIN_HEIGHT))
     return _COIN_IMAGE
 

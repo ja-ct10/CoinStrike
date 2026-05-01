@@ -2,6 +2,7 @@ import pygame
 import math
 import random
 from settings import *
+from utils import resource_path
 
 
 # ---------------------------------------------------------------------------
@@ -567,8 +568,8 @@ class WeaponManager:
         # Reusable slot rect — updated in-place in draw_ammo_hud
         self._slot_rect = pygame.Rect(0, 0, slot_w, slot_h)
 
-        self._ammo_font = pygame.font.Font("assets/fonts/PressStart2P-Regular.ttf", 8)
-        self._label_font = pygame.font.Font("assets/fonts/PressStart2P-Regular.ttf", 7)
+        self._ammo_font = pygame.font.Font(resource_path("assets/fonts/PressStart2P-Regular.ttf"), 8)
+        self._label_font = pygame.font.Font(resource_path("assets/fonts/PressStart2P-Regular.ttf"), 7)
 
         # Pre-render static label and hint surfaces now that fonts are ready
         for name in ("gun", "spear", "grenade"):

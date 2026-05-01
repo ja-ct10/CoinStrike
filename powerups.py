@@ -15,6 +15,7 @@ import pygame
 import math
 import random
 from settings import SCREEN_WIDTH, SCREEN_HEIGHT, PLAYER_WIDTH, PLAYER_HEIGHT
+from utils import resource_path
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -58,7 +59,7 @@ _DRAW_SCRATCH_RECT = pygame.Rect(0, 0, 0, 0)
 def _get_label_font() -> pygame.font.Font:
     global _LABEL_FONT
     if _LABEL_FONT is None:
-        _LABEL_FONT = pygame.font.Font("assets/fonts/PressStart2P-Regular.ttf", 6)
+        _LABEL_FONT = pygame.font.Font(resource_path("assets/fonts/PressStart2P-Regular.ttf"), 6)
     return _LABEL_FONT
 
 

@@ -1,5 +1,6 @@
 import pygame
 from settings import *
+from utils import resource_path
 
 WEAPON_DATA = [
     {"name": "SPEAR", "asset": "spear-box", "price": 30},
@@ -82,16 +83,16 @@ _BUY_RECTS_LIST: list[tuple[pygame.Rect, int]] = [
 def _get_shop_fonts():
     global _SHOP_TITLE_FONT, _SHOP_LABEL_FONT, _SHOP_PRICE_FONT
     if _SHOP_TITLE_FONT is None:
-        _SHOP_TITLE_FONT = pygame.font.Font("assets/fonts/PressStart2P-Regular.ttf", 13)
-        _SHOP_LABEL_FONT = pygame.font.Font("assets/fonts/PressStart2P-Regular.ttf", 9)
-        _SHOP_PRICE_FONT = pygame.font.Font("assets/fonts/PressStart2P-Regular.ttf", 10)
+        _SHOP_TITLE_FONT = pygame.font.Font(resource_path("assets/fonts/PressStart2P-Regular.ttf"), 13)
+        _SHOP_LABEL_FONT = pygame.font.Font(resource_path("assets/fonts/PressStart2P-Regular.ttf"), 9)
+        _SHOP_PRICE_FONT = pygame.font.Font(resource_path("assets/fonts/PressStart2P-Regular.ttf"), 10)
     return _SHOP_TITLE_FONT, _SHOP_LABEL_FONT, _SHOP_PRICE_FONT
 
 
 def _get_shop_coin_img():
     global _SHOP_COIN_IMG
     if _SHOP_COIN_IMG is None:
-        raw = pygame.image.load("assets/coin.png").convert_alpha()
+        raw = pygame.image.load(resource_path("assets/coin.png")).convert_alpha()
         _SHOP_COIN_IMG = pygame.transform.scale(raw, (_SHOP_COIN_SIZE, _SHOP_COIN_SIZE))
     return _SHOP_COIN_IMG
 
@@ -142,7 +143,7 @@ def _ensure_modal_resources():
 
 class Shop:
     def __init__(self, x, y):
-        self.image = pygame.image.load("assets/shop.png").convert_alpha()
+        self.image = pygame.image.load(resource_path("assets/shop.png")).convert_alpha()
         self.image = pygame.transform.scale(self.image, (SHOP_WIDTH, SHOP_HEIGHT))
         # Position is passed in — align between mission and settings in main.py
         self.rect = self.image.get_rect(topright=(x, y))
@@ -152,7 +153,7 @@ class Shop:
     def _load_weapon_images(self):
         self.weapon_images = []
         for w in WEAPON_DATA:
-            img = pygame.image.load(f"assets/{w['asset']}.png").convert_alpha()
+            img = pygame.image.load(resource_path(f"assets/{w['asset']}.png")).convert_alpha()
             img = pygame.transform.scale(img, (WEAPON_WIDTH, WEAPON_HEIGHT))
             self.weapon_images.append(img)
 
