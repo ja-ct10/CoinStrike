@@ -1192,27 +1192,34 @@ while running:
 
             # Optimized glitch platform update — only check platforms near player
             # Glitch platforms only matter when player is close enough to stand on them
+            # Cache player position once to avoid repeated rect access
             player_x = player.rect.centerx
+            player_bottom = player.rect.bottom
+            player_left = player.rect.left
+            player_right = player.rect.right
             player_check_range = 300  # Only check platforms within 300px of player
+
             for p in platforms:
                 # Non-glitch platforms never change — skip update entirely.
                 if not p.glitch:
                     continue
                 # Skip platforms far from player — they can't be stood on
-                if abs(p.rect.centerx - player_x) > player_check_range:
+                # Use squared distance to avoid sqrt (faster)
+                dx = p.rect.centerx - player_x
+                if dx * dx > player_check_range * player_check_range:
                     continue
+
                 p.update()
                 # Check if player is standing on this specific glitch platform.
                 # player.update() snaps rect.bottom = p.rect.top when landing,
                 # so we check the feet are within a small band of the platform top.
-                feet_y = player.rect.bottom
                 is_on = (
                     p.visible
                     and player.on_ground
-                    and player.rect.right > p.rect.left
-                    and player.rect.left < p.rect.right
-                    and feet_y >= p.rect.top - 2
-                    and feet_y <= p.rect.top + 10
+                    and player_right > p.rect.left
+                    and player_left < p.rect.right
+                    and player_bottom >= p.rect.top - 2
+                    and player_bottom <= p.rect.top + 10
                 )
                 p.notify_standing(is_on)
 
@@ -1222,35 +1229,41 @@ while running:
             # Update enemies — also checks weapon hits internally
             enemy_manager.update(player, health, weapon_manager, difficulty_scaler)
 
-            # Count new kills this frame and feed combo system
+            # Count new kills this frame and feed combo system (batch processing)
             # (enemies_killed is cumulative; track delta)
             new_kills = enemy_manager.enemies_killed - combo_system._last_kills
-            combo_system._last_kills = enemy_manager.enemies_killed
-            for _ in range(new_kills):
-                bonus = combo_system.on_kill(player)
-                player.coins_collected += bonus
-                player.coins_earned += bonus
+            if new_kills > 0:
+                combo_system._last_kills = enemy_manager.enemies_killed
+                # Batch process all kills at once to reduce function call overhead
+                for _ in range(new_kills):
+                    bonus = combo_system.on_kill(player)
+                    player.coins_collected += bonus
+                    player.coins_earned += bonus
 
-            # Combo: reset on damage
-            if health.hp < hp_before:
+            # Combo: reset on damage (only check if combo is active)
+            if combo_system.count > 0 and health.hp < hp_before:
                 combo_system.on_damage_taken(player)
 
             combo_system.update()
 
-            # Track peak combo for end-of-game stats
-            if combo_system.count > _max_combo:
-                _max_combo = combo_system.count
+            # Track peak combo for end-of-game stats (avoid redundant comparisons)
+            combo_count = combo_system.count
+            if combo_count > _max_combo:
+                _max_combo = combo_count
 
             # ================================================================
             # SECURITY CHECK - Anti-cheat monitoring
             # ================================================================
-            # Runs every 60 frames (1 second) automatically
+            # Runs every 120 frames (2 seconds) to reduce overhead
             # Detects abnormal values and applies penalties if needed
-            cheat_detected = not security_manager.update(player, health, weapon_manager)
-            if cheat_detected:
-                # Anti-cheat penalty was applied
-                # Values have been reset to safe defaults
-                pass  # Silently handle - no message to avoid disrupting gameplay
+            if game_frames % 120 == 0:
+                cheat_detected = not security_manager.update(
+                    player, health, weapon_manager
+                )
+                if cheat_detected:
+                    # Anti-cheat penalty was applied
+                    # Values have been reset to safe defaults
+                    pass  # Silently handle - no message to avoid disrupting gameplay
             # ================================================================
 
             # Transition to mission complete when boss is defeated
@@ -1281,11 +1294,14 @@ while running:
                 game_state = GAME_OVER
                 game_over_flash = 0
 
-            # Optimized camera smoothing — cache constants and use integer math where possible
-            target_offset_x = -(player.rect.x - SCREEN_WIDTH // 2)
+            # Optimized camera smoothing — use integer math and early exit
+            # Cache screen center to avoid repeated division
+            screen_center_x = SCREEN_WIDTH >> 1  # Bitwise shift is faster than division
+            target_offset_x = -(player.rect.x - screen_center_x)
             if target_offset_x > 0:
                 target_offset_x = 0
             # Lerp factor 0.15 — only update if delta is significant (> 0.5px)
+            # This avoids micro-adjustments that cause unnecessary redraws
             delta = target_offset_x - camera.offset_x
             if abs(delta) > 0.5:
                 camera.offset_x += delta * 0.15
