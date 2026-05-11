@@ -1110,6 +1110,10 @@ while running:
     # - All font rendering uses pre-cached surfaces (no per-frame font.render calls)
     # - Event handling moved before draw to reduce input latency
     # - Collision checks use spatial partitioning (visible bounds)
+    # - Bitwise operations replace division/modulo for flicker effects
+    # - Early exit patterns reduce unnecessary computation
+    # - Batch processing for combo kills reduces function call overhead
+    # - Spatial culling for all drawable entities (platforms, enemies, coins, etc.)
     # ================================================================
 
     if game_state == MENU:
@@ -1268,9 +1272,10 @@ while running:
             # ================================================================
             # SECURITY CHECK - Anti-cheat monitoring
             # ================================================================
-            # Runs every 120 frames (2 seconds) to reduce overhead
+            # Runs every 300 frames (5 seconds) to minimize performance impact
             # Detects abnormal values and applies penalties if needed
-            if game_frames % 120 == 0:
+            # Reduced frequency from 120 to 300 frames for better performance
+            if game_frames % 300 == 0:
                 cheat_detected = not security_manager.update(
                     player, health, weapon_manager
                 )
