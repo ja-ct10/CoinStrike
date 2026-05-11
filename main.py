@@ -18,7 +18,15 @@ from security import SecurityManager  # Security system integration
 from utils import resource_path  # PyInstaller path resolution
 
 pygame.init()
-pygame.mixer.init()
+
+# Initialize audio with error handling for systems without audio devices
+audio_available = True
+try:
+    pygame.mixer.init()
+except pygame.error as e:
+    print(f"Warning: Audio initialization failed - {e}")
+    print("Game will run without sound.")
+    audio_available = False
 
 # ================================================================
 # SECURITY SYSTEM INITIALIZATION
@@ -57,9 +65,15 @@ if not is_valid:
 
 # ================================================================
 
-pygame.mixer.music.load(resource_path("assets/sounds/background-music.mp3"))
-pygame.mixer.music.set_volume(0.5)
-pygame.mixer.music.play(-1)
+# Load background music if audio is available
+if audio_available:
+    try:
+        pygame.mixer.music.load(resource_path("assets/sounds/background-music.mp3"))
+        pygame.mixer.music.set_volume(0.5)
+        pygame.mixer.music.play(-1)
+    except pygame.error as e:
+        print(f"Warning: Could not load background music - {e}")
+        audio_available = False
 
 MENU = "menu"
 PLAYING = "playing"
