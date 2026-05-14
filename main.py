@@ -890,7 +890,8 @@ while running:
                         ) = reset_game()
                         game_frames = 0
                         _reset_stats()
-                        pygame.mixer.music.unpause()
+                        if audio_available:
+                            pygame.mixer.music.unpause()
                         game_state = PLAYING
                         camera.offset_x = 0
                         camera.offset_y = 0
@@ -948,7 +949,8 @@ while running:
                             ) = reset_game()
                             game_frames = 0
                             _reset_stats()
-                            pygame.mixer.music.unpause()
+                            if audio_available:
+                                pygame.mixer.music.unpause()
                             game_state = PLAYING
                             camera.offset_x = 0
                             camera.offset_y = 0
@@ -1003,8 +1005,9 @@ while running:
                                 ) = reset_game()
                                 game_frames = 0
                                 _reset_stats()
-                                pygame.mixer.music.stop()
-                                pygame.mixer.music.play(-1)
+                                if audio_available:
+                                    pygame.mixer.music.stop()
+                                    pygame.mixer.music.play(-1)
                                 camera.offset_x = 0
                                 camera.offset_y = 0
                                 show_settings_modal = False
@@ -1014,7 +1017,8 @@ while running:
                                 options_source = "game"
                             elif label == "QUIT":
                                 show_settings_modal = False
-                                pygame.mixer.music.pause()
+                                if audio_available:
+                                    pygame.mixer.music.pause()
                                 game_state = MENU
                             break
 
@@ -1046,13 +1050,15 @@ while running:
                     ) = reset_game()
                     game_frames = 0
                     _reset_stats()
-                    pygame.mixer.music.stop()
-                    pygame.mixer.music.play(-1)
+                    if audio_available:
+                        pygame.mixer.music.stop()
+                        pygame.mixer.music.play(-1)
                     camera.offset_x = 0
                     camera.offset_y = 0
                     game_state = PLAYING
                 elif _game_over_no_rect and _game_over_no_rect.collidepoint(event.pos):
-                    pygame.mixer.music.pause()
+                    if audio_available:
+                        pygame.mixer.music.pause()
                     game_state = MENU
 
             # Mission Complete buttons
@@ -1078,8 +1084,9 @@ while running:
                     ) = reset_game()
                     game_frames = 0
                     _reset_stats()
-                    pygame.mixer.music.stop()
-                    pygame.mixer.music.play(-1)
+                    if audio_available:
+                        pygame.mixer.music.stop()
+                        pygame.mixer.music.play(-1)
                     camera.offset_x = 0
                     camera.offset_y = 0
                     game_state = PLAYING
@@ -1087,7 +1094,8 @@ while running:
                     _mission_complete_quit_rect
                     and _mission_complete_quit_rect.collidepoint(event.pos)
                 ):
-                    pygame.mixer.music.pause()
+                    if audio_available:
+                        pygame.mixer.music.pause()
                     game_state = MENU
 
             if (
