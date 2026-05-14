@@ -1280,10 +1280,10 @@ while running:
             # ================================================================
             # SECURITY CHECK - Anti-cheat monitoring
             # ================================================================
-            # Runs every 300 frames (5 seconds) to minimize performance impact
+            # Runs every 600 frames (10 seconds) to minimize performance impact
             # Detects abnormal values and applies penalties if needed
-            # Reduced frequency from 120 to 300 frames for better performance
-            if game_frames % 300 == 0:
+            # Reduced frequency from 300 to 600 frames for better performance
+            if game_frames % 600 == 0:
                 cheat_detected = not security_manager.update(
                     player, health, weapon_manager
                 )
