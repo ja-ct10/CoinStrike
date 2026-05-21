@@ -1,5 +1,6 @@
 import pygame
 import math
+import asyncio  # Required for Pygbag
 from settings import *
 from camera import Camera
 from player import Player
@@ -14,8 +15,17 @@ from difficulty import DifficultyScaler
 from rocks import RockManager
 from combo import ComboSystem
 from powerups import PowerupManager
-from security import SecurityManager  # Security system integration
-from utils import resource_path  # PyInstaller path resolution
+
+# Security features disabled for web version
+# from security import SecurityManager
+
+try:
+    from utils import resource_path
+except ImportError:
+    # Fallback for web version
+    def resource_path(path):
+        return path
+
 
 pygame.init()
 
@@ -29,39 +39,10 @@ except pygame.error as e:
     audio_available = False
 
 # ================================================================
-# SECURITY SYSTEM INITIALIZATION
+# SECURITY SYSTEM - DISABLED FOR WEB VERSION
 # ================================================================
-security_manager = SecurityManager()
-
-# Define critical files for integrity checking
-CRITICAL_FILES = [
-    "main.py",
-    "player.py",
-    "enemy.py",
-    "weapon.py",
-    "world.py",
-    "health.py",
-    "security.py",
-]
-
-# Initialize security system
-security_manager.initialize(CRITICAL_FILES)
-
-# Verify game files integrity on startup
-is_valid, error_msg = security_manager.verify_game_files()
-if not is_valid:
-    # File tampering detected - show error and exit
-    print("=" * 60)
-    print("SECURITY ERROR: Game files have been modified")
-    print("=" * 60)
-    print(error_msg)
-    print("\nPlease reinstall the game.")
-    print("=" * 60)
-    # In production, you might want to show a graphical error message
-    # For now, we'll allow the game to continue for development
-    # Uncomment the line below to enforce file integrity:
-    # pygame.quit()
-    # exit(1)
+# Security features are not applicable in browser environment
+# File integrity checks and anti-cheat systems removed for web deployment
 
 # ================================================================
 
@@ -841,97 +822,52 @@ boss_intro_timer = 0
 game_stats: dict = {}  # populated when boss is defeated
 _max_combo: int = 0  # peak combo this game
 
-while running:
-    clock.tick(FPS)
-    mouse_pos = pygame.mouse.get_pos()
 
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-            running = False
+# Main game loop wrapped in async function for Pygbag compatibility
+async def main():
+    global running, mouse_pos, menu_selection, show_options_modal, show_settings_modal
+    global show_shop_modal, options_source, game_over_flash, boss_intro_timer
+    global game_state, game_frames, player, platforms, ground_segments, health
+    global mission, coin_manager, weapon_manager, enemy_manager, world_manager
+    global difficulty_scaler, rock_manager, combo_system, powerup_manager
+    global _shop_close_rect, _shop_buy_rects, _settings_close_rect
+    global _settings_btn_rects, _settings_btn_labels, _options_close_rect
+    global _game_over_yes_rect, _game_over_no_rect
+    global _mission_complete_restart_rect, _mission_complete_quit_rect
+    global game_stats, _max_combo
 
-        if event.type == pygame.KEYDOWN:
-            if game_state == GAME_OVER:
-                pass
+    while running:
+        clock.tick(FPS)
+        mouse_pos = pygame.mouse.get_pos()
 
-            elif show_shop_modal:
-                if event.key == pygame.K_ESCAPE:
-                    show_shop_modal = False
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
 
-            elif show_options_modal:
-                if event.key == pygame.K_ESCAPE:
-                    show_options_modal = False
+            if event.type == pygame.KEYDOWN:
+                if game_state == GAME_OVER:
+                    pass
 
-            elif show_settings_modal:
-                if event.key == pygame.K_ESCAPE:
-                    show_settings_modal = False
+                elif show_shop_modal:
+                    if event.key == pygame.K_ESCAPE:
+                        show_shop_modal = False
 
-            elif game_state == MENU:
+                elif show_options_modal:
+                    if event.key == pygame.K_ESCAPE:
+                        show_options_modal = False
 
-                if event.key in (pygame.K_UP, pygame.K_w):
-                    menu_selection = max(0, menu_selection - 1)
-                elif event.key in (pygame.K_DOWN, pygame.K_s):
-                    menu_selection = min(2, menu_selection + 1)
-                elif event.key == pygame.K_RETURN:
-                    if menu_selection == 0:
-                        (
-                            player,
-                            platforms,
-                            ground_segments,
-                            health,
-                            mission,
-                            coin_manager,
-                            weapon_manager,
-                            enemy_manager,
-                            world_manager,
-                            difficulty_scaler,
-                            rock_manager,
-                            combo_system,
-                            powerup_manager,
-                        ) = reset_game()
-                        game_frames = 0
-                        _reset_stats()
-                        if audio_available:
-                            pygame.mixer.music.unpause()
-                        game_state = PLAYING
-                        camera.offset_x = 0
-                        camera.offset_y = 0
-                    elif menu_selection == 1:
-                        show_options_modal = True
-                        options_source = "menu"
-                    elif menu_selection == 2:
-                        running = False
-                elif event.key == pygame.K_ESCAPE:
-                    running = False
+                elif show_settings_modal:
+                    if event.key == pygame.K_ESCAPE:
+                        show_settings_modal = False
 
-            elif game_state == PLAYING:
-                if event.key == pygame.K_ESCAPE:
-                    show_settings_modal = True
-                elif (
-                    event.key == pygame.K_b
-                    and not show_settings_modal
-                    and not show_options_modal
-                ):
-                    # B — toggle shop
-                    show_shop_modal = not show_shop_modal
-                elif event.key in (pygame.K_f, pygame.K_t) and not show_shop_modal:
-                    # Fire/throw on initial key press — guarantees response even
-                    # for quick taps that release before the per-frame poll runs.
-                    weapon_manager.handle_keydown(
-                        event.key,
-                        player,
-                        enemies=enemy_manager.enemies,
-                        boss=enemy_manager.boss,
-                    )
+                elif game_state == MENU:
 
-            elif game_state == MISSION_COMPLETE:
-                pass  # handled via MOUSEBUTTONDOWN below
-
-        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-            if game_state == MENU and not show_options_modal:
-                for i, rect in enumerate(menu_button_rects):
-                    if rect.collidepoint(event.pos):
-
-                        if i == 0:  # START
+                    if event.key in (pygame.K_UP, pygame.K_w):
+                        menu_selection = max(0, menu_selection - 1)
+                    elif event.key in (pygame.K_DOWN, pygame.K_s):
+                        menu_selection = min(2, menu_selection + 1)
+                    elif event.key == pygame.K_RETURN:
+                        if menu_selection == 0:
                             (
                                 player,
                                 platforms,
@@ -954,40 +890,43 @@ while running:
                             game_state = PLAYING
                             camera.offset_x = 0
                             camera.offset_y = 0
-
-                        elif i == 1:  # OPTIONS
+                        elif menu_selection == 1:
                             show_options_modal = True
                             options_source = "menu"
-
-                        elif i == 2:  # EXIT
+                        elif menu_selection == 2:
                             running = False
+                    elif event.key == pygame.K_ESCAPE:
+                        running = False
 
-            # Shop modal clicks
-            if game_state == PLAYING and show_shop_modal:
-                if _shop_close_rect and _shop_close_rect.collidepoint(event.pos):
-                    show_shop_modal = False
-                else:
-                    for btn_rect, idx in _shop_buy_rects:
-                        if btn_rect.collidepoint(event.pos):
-                            weapon = WEAPON_DATA[idx]
-                            if player.coins_collected >= weapon["price"]:
-                                player.coins_collected -= weapon["price"]
-                                weapon_manager.grant(weapon["name"].lower())
-                                show_shop_modal = False  # close shop after purchase
-                            break
+                elif game_state == PLAYING:
+                    if event.key == pygame.K_ESCAPE:
+                        show_settings_modal = True
+                    elif (
+                        event.key == pygame.K_b
+                        and not show_settings_modal
+                        and not show_options_modal
+                    ):
+                        # B — toggle shop
+                        show_shop_modal = not show_shop_modal
+                    elif event.key in (pygame.K_f, pygame.K_t) and not show_shop_modal:
+                        # Fire/throw on initial key press — guarantees response even
+                        # for quick taps that release before the per-frame poll runs.
+                        weapon_manager.handle_keydown(
+                            event.key,
+                            player,
+                            enemies=enemy_manager.enemies,
+                            boss=enemy_manager.boss,
+                        )
 
-            # Settings modal clicks
-            if game_state == PLAYING and show_settings_modal and not show_options_modal:
-                if _settings_close_rect and _settings_close_rect.collidepoint(
-                    event.pos
-                ):
-                    show_settings_modal = False
-                else:
-                    for rect, label in zip(_settings_btn_rects, _settings_btn_labels):
+                elif game_state == MISSION_COMPLETE:
+                    pass  # handled via MOUSEBUTTONDOWN below
+
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                if game_state == MENU and not show_options_modal:
+                    for i, rect in enumerate(menu_button_rects):
                         if rect.collidepoint(event.pos):
-                            if label == "RESUME":
-                                show_settings_modal = False
-                            elif label == "RESTART":
+
+                            if i == 0:  # START
                                 (
                                     player,
                                     platforms,
@@ -1006,430 +945,491 @@ while running:
                                 game_frames = 0
                                 _reset_stats()
                                 if audio_available:
-                                    pygame.mixer.music.stop()
-                                    pygame.mixer.music.play(-1)
+                                    pygame.mixer.music.unpause()
+                                game_state = PLAYING
                                 camera.offset_x = 0
                                 camera.offset_y = 0
-                                show_settings_modal = False
-                                game_state = PLAYING
-                            elif label == "OPTIONS":
+
+                            elif i == 1:  # OPTIONS
                                 show_options_modal = True
-                                options_source = "game"
-                            elif label == "QUIT":
-                                show_settings_modal = False
-                                if audio_available:
-                                    pygame.mixer.music.pause()
-                                game_state = MENU
-                            break
+                                options_source = "menu"
 
-            # Options modal close
-            if (
-                show_options_modal
-                and _options_close_rect
-                and _options_close_rect.collidepoint(event.pos)
-            ):
-                show_options_modal = False
+                            elif i == 2:  # EXIT
+                                running = False
 
-            # Game Over buttons
-            if game_state == GAME_OVER:
-                if _game_over_yes_rect and _game_over_yes_rect.collidepoint(event.pos):
-                    (
-                        player,
-                        platforms,
-                        ground_segments,
-                        health,
-                        mission,
-                        coin_manager,
-                        weapon_manager,
-                        enemy_manager,
-                        world_manager,
-                        difficulty_scaler,
-                        rock_manager,
-                        combo_system,
-                        powerup_manager,
-                    ) = reset_game()
-                    game_frames = 0
-                    _reset_stats()
-                    if audio_available:
-                        pygame.mixer.music.stop()
-                        pygame.mixer.music.play(-1)
-                    camera.offset_x = 0
-                    camera.offset_y = 0
-                    game_state = PLAYING
-                elif _game_over_no_rect and _game_over_no_rect.collidepoint(event.pos):
-                    if audio_available:
-                        pygame.mixer.music.pause()
-                    game_state = MENU
+                # Shop modal clicks
+                if game_state == PLAYING and show_shop_modal:
+                    if _shop_close_rect and _shop_close_rect.collidepoint(event.pos):
+                        show_shop_modal = False
+                    else:
+                        for btn_rect, idx in _shop_buy_rects:
+                            if btn_rect.collidepoint(event.pos):
+                                weapon = WEAPON_DATA[idx]
+                                if player.coins_collected >= weapon["price"]:
+                                    player.coins_collected -= weapon["price"]
+                                    weapon_manager.grant(weapon["name"].lower())
+                                    show_shop_modal = False  # close shop after purchase
+                                break
 
-            # Mission Complete buttons
-            if game_state == MISSION_COMPLETE:
+                # Settings modal clicks
+                if game_state == PLAYING and show_settings_modal and not show_options_modal:
+                    if _settings_close_rect and _settings_close_rect.collidepoint(
+                        event.pos
+                    ):
+                        show_settings_modal = False
+                    else:
+                        for rect, label in zip(_settings_btn_rects, _settings_btn_labels):
+                            if rect.collidepoint(event.pos):
+                                if label == "RESUME":
+                                    show_settings_modal = False
+                                elif label == "RESTART":
+                                    (
+                                        player,
+                                        platforms,
+                                        ground_segments,
+                                        health,
+                                        mission,
+                                        coin_manager,
+                                        weapon_manager,
+                                        enemy_manager,
+                                        world_manager,
+                                        difficulty_scaler,
+                                        rock_manager,
+                                        combo_system,
+                                        powerup_manager,
+                                    ) = reset_game()
+                                    game_frames = 0
+                                    _reset_stats()
+                                    if audio_available:
+                                        pygame.mixer.music.stop()
+                                        pygame.mixer.music.play(-1)
+                                    camera.offset_x = 0
+                                    camera.offset_y = 0
+                                    show_settings_modal = False
+                                    game_state = PLAYING
+                                elif label == "OPTIONS":
+                                    show_options_modal = True
+                                    options_source = "game"
+                                elif label == "QUIT":
+                                    show_settings_modal = False
+                                    if audio_available:
+                                        pygame.mixer.music.pause()
+                                    game_state = MENU
+                                break
+
+                # Options modal close
                 if (
-                    _mission_complete_restart_rect
-                    and _mission_complete_restart_rect.collidepoint(event.pos)
+                    show_options_modal
+                    and _options_close_rect
+                    and _options_close_rect.collidepoint(event.pos)
                 ):
-                    (
-                        player,
-                        platforms,
-                        ground_segments,
-                        health,
-                        mission,
-                        coin_manager,
-                        weapon_manager,
-                        enemy_manager,
-                        world_manager,
-                        difficulty_scaler,
-                        rock_manager,
-                        combo_system,
-                        powerup_manager,
-                    ) = reset_game()
-                    game_frames = 0
-                    _reset_stats()
-                    if audio_available:
-                        pygame.mixer.music.stop()
-                        pygame.mixer.music.play(-1)
-                    camera.offset_x = 0
-                    camera.offset_y = 0
-                    game_state = PLAYING
-                elif (
-                    _mission_complete_quit_rect
-                    and _mission_complete_quit_rect.collidepoint(event.pos)
+                    show_options_modal = False
+
+                # Game Over buttons
+                if game_state == GAME_OVER:
+                    if _game_over_yes_rect and _game_over_yes_rect.collidepoint(event.pos):
+                        (
+                            player,
+                            platforms,
+                            ground_segments,
+                            health,
+                            mission,
+                            coin_manager,
+                            weapon_manager,
+                            enemy_manager,
+                            world_manager,
+                            difficulty_scaler,
+                            rock_manager,
+                            combo_system,
+                            powerup_manager,
+                        ) = reset_game()
+                        game_frames = 0
+                        _reset_stats()
+                        if audio_available:
+                            pygame.mixer.music.stop()
+                            pygame.mixer.music.play(-1)
+                        camera.offset_x = 0
+                        camera.offset_y = 0
+                        game_state = PLAYING
+                    elif _game_over_no_rect and _game_over_no_rect.collidepoint(event.pos):
+                        if audio_available:
+                            pygame.mixer.music.pause()
+                        game_state = MENU
+
+                # Mission Complete buttons
+                if game_state == MISSION_COMPLETE:
+                    if (
+                        _mission_complete_restart_rect
+                        and _mission_complete_restart_rect.collidepoint(event.pos)
+                    ):
+                        (
+                            player,
+                            platforms,
+                            ground_segments,
+                            health,
+                            mission,
+                            coin_manager,
+                            weapon_manager,
+                            enemy_manager,
+                            world_manager,
+                            difficulty_scaler,
+                            rock_manager,
+                            combo_system,
+                            powerup_manager,
+                        ) = reset_game()
+                        game_frames = 0
+                        _reset_stats()
+                        if audio_available:
+                            pygame.mixer.music.stop()
+                            pygame.mixer.music.play(-1)
+                        camera.offset_x = 0
+                        camera.offset_y = 0
+                        game_state = PLAYING
+                    elif (
+                        _mission_complete_quit_rect
+                        and _mission_complete_quit_rect.collidepoint(event.pos)
+                    ):
+                        if audio_available:
+                            pygame.mixer.music.pause()
+                        game_state = MENU
+
+                if (
+                    game_state == PLAYING
+                    and not show_settings_modal
+                    and not show_options_modal
+                    and not show_shop_modal
                 ):
-                    if audio_available:
-                        pygame.mixer.music.pause()
-                    game_state = MENU
+                    if settings_icon.rect.collidepoint(event.pos):
+                        show_settings_modal = True
+                    elif shop.rect.collidepoint(event.pos):
+                        show_shop_modal = True
 
-            if (
-                game_state == PLAYING
-                and not show_settings_modal
-                and not show_options_modal
-                and not show_shop_modal
-            ):
-                if settings_icon.rect.collidepoint(event.pos):
-                    show_settings_modal = True
-                elif shop.rect.collidepoint(event.pos):
-                    show_shop_modal = True
+        # ================================================================ UPDATE
+        # Performance optimizations applied:
+        # - Cached visible bounds computed once per frame, reused for all culling
+        # - Glitch platform updates only check platforms near player (300px range)
+        # - Camera lerp skips update if delta < 0.5px (avoids micro-adjustments)
+        # - Key state polled once per frame and cached in _held variable
+        # - All font rendering uses pre-cached surfaces (no per-frame font.render calls)
+        # - Event handling moved before draw to reduce input latency
+        # - Collision checks use spatial partitioning (visible bounds)
+        # - Bitwise operations replace division/modulo for flicker effects
+        # - Early exit patterns reduce unnecessary computation
+        # - Batch processing for combo kills reduces function call overhead
+        # - Spatial culling for all drawable entities (platforms, enemies, coins, etc.)
+        # ================================================================
 
-    # ================================================================ UPDATE
-    # Performance optimizations applied:
-    # - Cached visible bounds computed once per frame, reused for all culling
-    # - Glitch platform updates only check platforms near player (300px range)
-    # - Camera lerp skips update if delta < 0.5px (avoids micro-adjustments)
-    # - Key state polled once per frame and cached in _held variable
-    # - All font rendering uses pre-cached surfaces (no per-frame font.render calls)
-    # - Event handling moved before draw to reduce input latency
-    # - Collision checks use spatial partitioning (visible bounds)
-    # - Bitwise operations replace division/modulo for flicker effects
-    # - Early exit patterns reduce unnecessary computation
-    # - Batch processing for combo kills reduces function call overhead
-    # - Spatial culling for all drawable entities (platforms, enemies, coins, etc.)
-    # ================================================================
+        if game_state == MENU:
+            menu_button_rects = draw_menu(screen, menu_selection)
 
-    if game_state == MENU:
-        menu_button_rects = draw_menu(screen, menu_selection)
+            if show_options_modal:
+                _options_close_rect = draw_options_modal(screen, mouse_pos)
 
-        if show_options_modal:
-            _options_close_rect = draw_options_modal(screen, mouse_pos)
+        elif game_state == BOSS_INTRO:
+            # Keep the world rendering live so the player can see the world behind
+            # the overlay, but freeze all game logic during the intro.
+            # Optimized: reuse visible bounds from main game loop pattern
+            bg_offset = int(-camera.offset_x * 0.4) % SCREEN_WIDTH
+            screen.blit(background, (bg_offset - SCREEN_WIDTH, 0))
+            screen.blit(background, (bg_offset, 0))
+            screen.blit(background, (bg_offset + SCREEN_WIDTH, 0))
 
-    elif game_state == BOSS_INTRO:
-        # Keep the world rendering live so the player can see the world behind
-        # the overlay, but freeze all game logic during the intro.
-        # Optimized: reuse visible bounds from main game loop pattern
-        bg_offset = int(-camera.offset_x * 0.4) % SCREEN_WIDTH
-        screen.blit(background, (bg_offset - SCREEN_WIDTH, 0))
-        screen.blit(background, (bg_offset, 0))
-        screen.blit(background, (bg_offset + SCREEN_WIDTH, 0))
-
-        for seg in ground_segments:
-            seg.draw(screen, camera)
-
-        # Optimized platform culling during boss intro (reuse pattern from main loop)
-        _bi_left = -camera.offset_x - 200
-        _bi_right = -camera.offset_x + SCREEN_WIDTH + 200
-        for platform in platforms:
-            # Cache rect.x to avoid repeated attribute access
-            plat_x = platform.rect.x
-            if _bi_left <= plat_x <= _bi_right:
-                platform.draw(screen, camera)
-
-        enemy_manager.draw(screen, camera)
-
-        # Optimized invincibility flicker check (bitwise AND is faster than modulo)
-        if health.invincible_timer == 0 or (health.invincible_timer & 0x1F) < 16:
-            player.draw(screen, camera, weapon_manager=weapon_manager, health=health)
-
-        draw_boss_intro(screen, boss_intro_timer, BOSS_INTRO_DURATION)
-
-        # Count down and transition to PLAYING once the intro finishes
-        boss_intro_timer -= 1
-        if boss_intro_timer <= 0:
-            enemy_manager.spawn_boss(player)
-            game_state = PLAYING
-
-    elif game_state in (PLAYING, GAME_OVER):
-        any_modal = show_settings_modal or show_options_modal or show_shop_modal
-
-        if game_state == PLAYING and not any_modal and not health.game_over:
-
-            game_frames += 1
-            difficulty_scaler.update(game_frames)
-
-            mission.update(player, enemy_manager, weapon_manager)
-
-            # When all missions complete, show boss intro screen first
-            if (
-                mission.all_completed
-                and not enemy_manager.boss_spawned
-                and game_state == PLAYING
-            ):
-                game_state = BOSS_INTRO
-                boss_intro_timer = BOSS_INTRO_DURATION
-
-            # World streaming — extends platforms/ground/coins as player moves
-            world_extended = world_manager.update(
-                player, enemy_manager, coin_manager, powerup_manager
-            )
-            # Keep local references in sync only when the world actually extended
-            if world_extended:
-                platforms = world_manager.platforms
-                ground_segments = world_manager.ground_segments
-
-            player.update(platforms, ground_segments)
-
-            # Per-frame poll for held fire/throw keys (auto-fire while held).
-            # KEYDOWN handles the initial press; this poll handles continuous fire.
-            # Cache key state once per frame to avoid multiple get_pressed() calls
-            _held = pygame.key.get_pressed()
-            if _held[pygame.K_f]:
-                weapon_manager.handle_keydown(
-                    pygame.K_f,
-                    player,
-                    enemies=enemy_manager.enemies,
-                    boss=enemy_manager.boss,
-                )
-            if _held[pygame.K_t]:
-                weapon_manager.handle_keydown(
-                    pygame.K_t,
-                    player,
-                    enemies=enemy_manager.enemies,
-                    boss=enemy_manager.boss,
-                )
-
-            weapon_manager.update(ground_segments, platforms)
-
-            # Optimized glitch platform update — only check platforms near player
-            # Glitch platforms only matter when player is close enough to stand on them
-            # Cache player position once to avoid repeated rect access
-            player_x = player.rect.centerx
-            player_bottom = player.rect.bottom
-            player_left = player.rect.left
-            player_right = player.rect.right
-            player_check_range = 300  # Only check platforms within 300px of player
-
-            for p in platforms:
-                # Non-glitch platforms never change — skip update entirely.
-                if not p.glitch:
-                    continue
-                # Skip platforms far from player — they can't be stood on
-                # Use squared distance to avoid sqrt (faster)
-                dx = p.rect.centerx - player_x
-                if dx * dx > player_check_range * player_check_range:
-                    continue
-
-                p.update()
-                # Check if player is standing on this specific glitch platform.
-                # player.update() snaps rect.bottom = p.rect.top when landing,
-                # so we check the feet are within a small band of the platform top.
-                is_on = (
-                    p.visible
-                    and player.on_ground
-                    and player_right > p.rect.left
-                    and player_left < p.rect.right
-                    and player_bottom >= p.rect.top - 2
-                    and player_bottom <= p.rect.top + 10
-                )
-                p.notify_standing(is_on)
-
-            # Track HP before enemy update to detect damage for combo reset
-            hp_before = health.hp
-
-            # Update enemies — also checks weapon hits internally
-            enemy_manager.update(player, health, weapon_manager, difficulty_scaler)
-
-            # Count new kills this frame and feed combo system (batch processing)
-            # (enemies_killed is cumulative; track delta)
-            new_kills = enemy_manager.enemies_killed - combo_system._last_kills
-            if new_kills > 0:
-                combo_system._last_kills = enemy_manager.enemies_killed
-                # Batch process all kills at once to reduce function call overhead
-                for _ in range(new_kills):
-                    bonus = combo_system.on_kill(player)
-                    player.coins_collected += bonus
-                    player.coins_earned += bonus
-
-            # Combo: reset on damage (only check if combo is active)
-            if combo_system.count > 0 and health.hp < hp_before:
-                combo_system.on_damage_taken(player)
-
-            combo_system.update()
-
-            # Track peak combo for end-of-game stats (avoid redundant comparisons)
-            combo_count = combo_system.count
-            if combo_count > _max_combo:
-                _max_combo = combo_count
-
-            # ================================================================
-            # SECURITY CHECK - Anti-cheat monitoring
-            # ================================================================
-            # Runs every 600 frames (10 seconds) to minimize performance impact
-            # Detects abnormal values and applies penalties if needed
-            # Reduced frequency from 300 to 600 frames for better performance
-            if game_frames % 600 == 0:
-                cheat_detected = not security_manager.update(
-                    player, health, weapon_manager
-                )
-                if cheat_detected:
-                    # Anti-cheat penalty was applied
-                    # Values have been reset to safe defaults
-                    pass  # Silently handle - no message to avoid disrupting gameplay
-            # ================================================================
-
-            # Transition to mission complete when boss is defeated
-            if enemy_manager.boss_defeated:
-                # Snapshot end-of-game statistics
-                total_secs = game_frames // 60
-                game_stats = {
-                    "time_str": f"{total_secs // 60}:{total_secs % 60:02d}",
-                    "coins": player.coins_earned,
-                    "kills": enemy_manager.enemies_killed,
-                    "distance": int(player.world_x // 100),
-                    "weapons": weapon_manager.weapons_bought,
-                    "max_combo": _max_combo,
-                }
-                game_state = MISSION_COMPLETE
-
-            # Falling rocks
-            rock_manager.update(
-                camera, ground_segments, platforms, player, health, difficulty_scaler
-            )
-
-            # Powerups — update effects and collection
-            powerup_manager.update(player, health, weapon_manager, coin_manager)
-            powerup_manager.prune(player.world_x, 3 * SCREEN_WIDTH)
-
-            health.update(player, ground_segments, platforms)
-            if health.game_over:
-                game_state = GAME_OVER
-                game_over_flash = 0
-
-            # Optimized camera smoothing — use integer math and early exit
-            # Cache screen center to avoid repeated division
-            screen_center_x = SCREEN_WIDTH >> 1  # Bitwise shift is faster than division
-            target_offset_x = -(player.rect.x - screen_center_x)
-            if target_offset_x > 0:
-                target_offset_x = 0
-            # Lerp factor 0.15 — only update if delta is significant (> 0.5px)
-            # This avoids micro-adjustments that cause unnecessary redraws
-            delta = target_offset_x - camera.offset_x
-            if abs(delta) > 0.5:
-                camera.offset_x += delta * 0.15
-
-        # Parallax background — cache offset calculation
-        bg_offset = int(-camera.offset_x * 0.4) % SCREEN_WIDTH
-        screen.blit(background, (bg_offset - SCREEN_WIDTH, 0))
-        screen.blit(background, (bg_offset, 0))
-        screen.blit(background, (bg_offset + SCREEN_WIDTH, 0))
-
-        # Optimized culling — compute visible bounds once, reuse for all draw calls
-        # Extended margin for smooth scrolling (objects appear/disappear off-screen)
-        _vis_left = -camera.offset_x - 400
-        _vis_right = -camera.offset_x + SCREEN_WIDTH + 400
-
-        # Ground segments — draw only visible ones (batch check with cached rect properties)
-        for seg in ground_segments:
-            # Cache rect properties to avoid repeated attribute access
-            seg_right = seg.rect.right
-            seg_left = seg.rect.left
-            if seg_right > _vis_left and seg_left < _vis_right:
+            for seg in ground_segments:
                 seg.draw(screen, camera)
 
-        # Platforms — draw only visible ones (optimized bounds check)
-        for platform in platforms:
-            # Single comparison using cached rect.x (platforms are fixed-width)
-            plat_x = platform.rect.x
-            if _vis_left <= plat_x <= _vis_right:
-                platform.draw(screen, camera)
+            # Optimized platform culling during boss intro (reuse pattern from main loop)
+            _bi_left = -camera.offset_x - 200
+            _bi_right = -camera.offset_x + SCREEN_WIDTH + 200
+            for platform in platforms:
+                # Cache rect.x to avoid repeated attribute access
+                plat_x = platform.rect.x
+                if _bi_left <= plat_x <= _bi_right:
+                    platform.draw(screen, camera)
 
-        # Coins — update (collect) and draw
-        coin_manager.update(player)
-        coin_manager.prune(player.world_x, 3 * SCREEN_WIDTH)
-        coin_manager.draw(screen, camera)
+            enemy_manager.draw(screen, camera)
 
-        # Powerups
-        powerup_manager.draw(screen, camera)
+            # Optimized invincibility flicker check (bitwise AND is faster than modulo)
+            if health.invincible_timer == 0 or (health.invincible_timer & 0x1F) < 16:
+                player.draw(screen, camera, weapon_manager=weapon_manager, health=health)
 
-        weapon_manager.draw(screen, camera)
+            draw_boss_intro(screen, boss_intro_timer, BOSS_INTRO_DURATION)
 
-        # Falling rocks
-        rock_manager.draw(screen, camera)
+            # Count down and transition to PLAYING once the intro finishes
+            boss_intro_timer -= 1
+            if boss_intro_timer <= 0:
+                enemy_manager.spawn_boss(player)
+                game_state = PLAYING
 
-        # Enemies drawn behind player
-        enemy_manager.draw(screen, camera)
+        elif game_state in (PLAYING, GAME_OVER):
+            any_modal = show_settings_modal or show_options_modal or show_shop_modal
 
-        # Player (invincibility flicker) - optimized with bitwise check
-        # Bitwise AND is ~2x faster than division+modulo for flicker effect
-        if health.invincible_timer == 0 or (health.invincible_timer & 0x1F) < 16:
-            player.draw(screen, camera, weapon_manager=weapon_manager, health=health)
+            if game_state == PLAYING and not any_modal and not health.game_over:
 
-        # --- HUD ---
-        draw_hud_coin(screen, player)
-        shop.draw(screen)
-        mission.draw(screen)
-        settings_icon.draw(screen)
-        health.draw(screen)
-        weapon_manager.draw_ammo_hud(screen)
+                game_frames += 1
+                difficulty_scaler.update(game_frames)
 
-        # Time + distance — aligned below the HP bar
-        draw_hud_stats(screen, game_frames, player)
+                mission.update(player, enemy_manager, weapon_manager)
 
-        # Active powerup timers
-        powerup_manager.draw_hud(screen)
+                # When all missions complete, show boss intro screen first
+                if (
+                    mission.all_completed
+                    and not enemy_manager.boss_spawned
+                    and game_state == PLAYING
+                ):
+                    game_state = BOSS_INTRO
+                    boss_intro_timer = BOSS_INTRO_DURATION
 
-        # Combo text — below the stats line (stats at y=44, ~10px tall → start at 58)
-        combo_system.draw(screen, y=58)
+                # World streaming — extends platforms/ground/coins as player moves
+                world_extended = world_manager.update(
+                    player, enemy_manager, coin_manager, powerup_manager
+                )
+                # Keep local references in sync only when the world actually extended
+                if world_extended:
+                    platforms = world_manager.platforms
+                    ground_segments = world_manager.ground_segments
 
-        # Key guide — anchored to the bottom-right corner
-        draw_key_guide(screen)
+                player.update(platforms, ground_segments)
 
-        # --- Shop modal ---
-        if show_shop_modal:
-            _shop_close_rect, _shop_buy_rects = shop.draw_modal(
-                screen, mouse_pos, player.coins_collected
+                # Per-frame poll for held fire/throw keys (auto-fire while held).
+                # KEYDOWN handles the initial press; this poll handles continuous fire.
+                # Cache key state once per frame to avoid multiple get_pressed() calls
+                _held = pygame.key.get_pressed()
+                if _held[pygame.K_f]:
+                    weapon_manager.handle_keydown(
+                        pygame.K_f,
+                        player,
+                        enemies=enemy_manager.enemies,
+                        boss=enemy_manager.boss,
+                    )
+                if _held[pygame.K_t]:
+                    weapon_manager.handle_keydown(
+                        pygame.K_t,
+                        player,
+                        enemies=enemy_manager.enemies,
+                        boss=enemy_manager.boss,
+                    )
+
+                weapon_manager.update(ground_segments, platforms)
+
+                # Optimized glitch platform update — only check platforms near player
+                # Glitch platforms only matter when player is close enough to stand on them
+                # Cache player position once to avoid repeated rect access
+                player_x = player.rect.centerx
+                player_bottom = player.rect.bottom
+                player_left = player.rect.left
+                player_right = player.rect.right
+                player_check_range = 300  # Only check platforms within 300px of player
+
+                for p in platforms:
+                    # Non-glitch platforms never change — skip update entirely.
+                    if not p.glitch:
+                        continue
+                    # Skip platforms far from player — they can't be stood on
+                    # Use squared distance to avoid sqrt (faster)
+                    dx = p.rect.centerx - player_x
+                    if dx * dx > player_check_range * player_check_range:
+                        continue
+
+                    p.update()
+                    # Check if player is standing on this specific glitch platform.
+                    # player.update() snaps rect.bottom = p.rect.top when landing,
+                    # so we check the feet are within a small band of the platform top.
+                    is_on = (
+                        p.visible
+                        and player.on_ground
+                        and player_right > p.rect.left
+                        and player_left < p.rect.right
+                        and player_bottom >= p.rect.top - 2
+                        and player_bottom <= p.rect.top + 10
+                    )
+                    p.notify_standing(is_on)
+
+                # Track HP before enemy update to detect damage for combo reset
+                hp_before = health.hp
+
+                # Update enemies — also checks weapon hits internally
+                enemy_manager.update(player, health, weapon_manager, difficulty_scaler)
+
+                # Count new kills this frame and feed combo system (batch processing)
+                # (enemies_killed is cumulative; track delta)
+                new_kills = enemy_manager.enemies_killed - combo_system._last_kills
+                if new_kills > 0:
+                    combo_system._last_kills = enemy_manager.enemies_killed
+                    # Batch process all kills at once to reduce function call overhead
+                    for _ in range(new_kills):
+                        bonus = combo_system.on_kill(player)
+                        player.coins_collected += bonus
+                        player.coins_earned += bonus
+
+                # Combo: reset on damage (only check if combo is active)
+                if combo_system.count > 0 and health.hp < hp_before:
+                    combo_system.on_damage_taken(player)
+
+                combo_system.update()
+
+                # Track peak combo for end-of-game stats (avoid redundant comparisons)
+                combo_count = combo_system.count
+                if combo_count > _max_combo:
+                    _max_combo = combo_count
+
+                # ================================================================
+                # SECURITY CHECK - Anti-cheat monitoring
+                # ================================================================
+                # Runs every 600 frames (10 seconds) to minimize performance impact
+                # Detects abnormal values and applies penalties if needed
+                # Reduced frequency from 300 to 600 frames for better performance
+                if game_frames % 600 == 0:
+                    cheat_detected = not security_manager.update(
+                        player, health, weapon_manager
+                    )
+                    if cheat_detected:
+                        # Anti-cheat penalty was applied
+                        # Values have been reset to safe defaults
+                        pass  # Silently handle - no message to avoid disrupting gameplay
+                # ================================================================
+
+                # Transition to mission complete when boss is defeated
+                if enemy_manager.boss_defeated:
+                    # Snapshot end-of-game statistics
+                    total_secs = game_frames // 60
+                    game_stats = {
+                        "time_str": f"{total_secs // 60}:{total_secs % 60:02d}",
+                        "coins": player.coins_earned,
+                        "kills": enemy_manager.enemies_killed,
+                        "distance": int(player.world_x // 100),
+                        "weapons": weapon_manager.weapons_bought,
+                        "max_combo": _max_combo,
+                    }
+                    game_state = MISSION_COMPLETE
+
+                # Falling rocks
+                rock_manager.update(
+                    camera, ground_segments, platforms, player, health, difficulty_scaler
+                )
+
+                # Powerups — update effects and collection
+                powerup_manager.update(player, health, weapon_manager, coin_manager)
+                powerup_manager.prune(player.world_x, 3 * SCREEN_WIDTH)
+
+                health.update(player, ground_segments, platforms)
+                if health.game_over:
+                    game_state = GAME_OVER
+                    game_over_flash = 0
+
+                # Optimized camera smoothing — use integer math and early exit
+                # Cache screen center to avoid repeated division
+                screen_center_x = SCREEN_WIDTH >> 1  # Bitwise shift is faster than division
+                target_offset_x = -(player.rect.x - screen_center_x)
+                if target_offset_x > 0:
+                    target_offset_x = 0
+                # Lerp factor 0.15 — only update if delta is significant (> 0.5px)
+                # This avoids micro-adjustments that cause unnecessary redraws
+                delta = target_offset_x - camera.offset_x
+                if abs(delta) > 0.5:
+                    camera.offset_x += delta * 0.15
+
+            # Parallax background — cache offset calculation
+            bg_offset = int(-camera.offset_x * 0.4) % SCREEN_WIDTH
+            screen.blit(background, (bg_offset - SCREEN_WIDTH, 0))
+            screen.blit(background, (bg_offset, 0))
+            screen.blit(background, (bg_offset + SCREEN_WIDTH, 0))
+
+            # Optimized culling — compute visible bounds once, reuse for all draw calls
+            # Extended margin for smooth scrolling (objects appear/disappear off-screen)
+            _vis_left = -camera.offset_x - 400
+            _vis_right = -camera.offset_x + SCREEN_WIDTH + 400
+
+            # Ground segments — draw only visible ones (batch check with cached rect properties)
+            for seg in ground_segments:
+                # Cache rect properties to avoid repeated attribute access
+                seg_right = seg.rect.right
+                seg_left = seg.rect.left
+                if seg_right > _vis_left and seg_left < _vis_right:
+                    seg.draw(screen, camera)
+
+            # Platforms — draw only visible ones (optimized bounds check)
+            for platform in platforms:
+                # Single comparison using cached rect.x (platforms are fixed-width)
+                plat_x = platform.rect.x
+                if _vis_left <= plat_x <= _vis_right:
+                    platform.draw(screen, camera)
+
+            # Coins — update (collect) and draw
+            coin_manager.update(player)
+            coin_manager.prune(player.world_x, 3 * SCREEN_WIDTH)
+            coin_manager.draw(screen, camera)
+
+            # Powerups
+            powerup_manager.draw(screen, camera)
+
+            weapon_manager.draw(screen, camera)
+
+            # Falling rocks
+            rock_manager.draw(screen, camera)
+
+            # Enemies drawn behind player
+            enemy_manager.draw(screen, camera)
+
+            # Player (invincibility flicker) - optimized with bitwise check
+            # Bitwise AND is ~2x faster than division+modulo for flicker effect
+            if health.invincible_timer == 0 or (health.invincible_timer & 0x1F) < 16:
+                player.draw(screen, camera, weapon_manager=weapon_manager, health=health)
+
+            # --- HUD ---
+            draw_hud_coin(screen, player)
+            shop.draw(screen)
+            mission.draw(screen)
+            settings_icon.draw(screen)
+            health.draw(screen)
+            weapon_manager.draw_ammo_hud(screen)
+
+            # Time + distance — aligned below the HP bar
+            draw_hud_stats(screen, game_frames, player)
+
+            # Active powerup timers
+            powerup_manager.draw_hud(screen)
+
+            # Combo text — below the stats line (stats at y=44, ~10px tall → start at 58)
+            combo_system.draw(screen, y=58)
+
+            # Key guide — anchored to the bottom-right corner
+            draw_key_guide(screen)
+
+            # --- Shop modal ---
+            if show_shop_modal:
+                _shop_close_rect, _shop_buy_rects = shop.draw_modal(
+                    screen, mouse_pos, player.coins_collected
+                )
+
+            # --- Settings modal ---
+            if show_settings_modal and not show_options_modal:
+                _settings_close_rect, _settings_btn_rects, _settings_btn_labels = (
+                    draw_settings_modal(screen, mouse_pos)
+                )
+
+            # --- Options modal (in-game) ---
+            if show_options_modal and options_source == "game":
+                _options_close_rect = draw_options_modal(screen, mouse_pos)
+
+            # --- Game Over overlay ---
+            if game_state == GAME_OVER:
+                game_over_flash += 1
+                _game_over_yes_rect, _game_over_no_rect = draw_game_over(
+                    screen, mouse_pos, game_over_flash
+                )
+
+        elif game_state == MISSION_COMPLETE:
+            bg_offset = int(-camera.offset_x * 0.4) % SCREEN_WIDTH
+            screen.blit(background, (bg_offset - SCREEN_WIDTH, 0))
+            screen.blit(background, (bg_offset, 0))
+            screen.blit(background, (bg_offset + SCREEN_WIDTH, 0))
+            _mission_complete_restart_rect, _mission_complete_quit_rect = (
+                draw_mission_complete(screen, mouse_pos, game_stats)
             )
 
-        # --- Settings modal ---
-        if show_settings_modal and not show_options_modal:
-            _settings_close_rect, _settings_btn_rects, _settings_btn_labels = (
-                draw_settings_modal(screen, mouse_pos)
-            )
+        pygame.display.flip()
+        await asyncio.sleep(0)  # Required for Pygbag - yields control to browser
 
-        # --- Options modal (in-game) ---
-        if show_options_modal and options_source == "game":
-            _options_close_rect = draw_options_modal(screen, mouse_pos)
 
-        # --- Game Over overlay ---
-        if game_state == GAME_OVER:
-            game_over_flash += 1
-            _game_over_yes_rect, _game_over_no_rect = draw_game_over(
-                screen, mouse_pos, game_over_flash
-            )
-
-    elif game_state == MISSION_COMPLETE:
-        bg_offset = int(-camera.offset_x * 0.4) % SCREEN_WIDTH
-        screen.blit(background, (bg_offset - SCREEN_WIDTH, 0))
-        screen.blit(background, (bg_offset, 0))
-        screen.blit(background, (bg_offset + SCREEN_WIDTH, 0))
-        _mission_complete_restart_rect, _mission_complete_quit_rect = (
-            draw_mission_complete(screen, mouse_pos, game_stats)
-        )
-
-    pygame.display.flip()
+# Run the async main loop
+asyncio.run(main())
