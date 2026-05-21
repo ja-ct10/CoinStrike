@@ -34,9 +34,9 @@ IS_WEB = sys.platform == "emscripten"
 
 # Web-specific performance optimizations
 if IS_WEB:
-    WEB_FPS = 30  # Reduce FPS for web to improve performance
-    WEB_MAX_ENEMIES = 3  # Limit max enemies on screen
-    WEB_MAX_PARTICLES = 20  # Limit particle effects
+    WEB_FPS = 60  # Target 60 FPS for web
+    WEB_MAX_ENEMIES = 5  # Limit max enemies on screen
+    WEB_MAX_PARTICLES = 30  # Limit particle effects
     print("Running in web mode - performance optimizations enabled")
 else:
     WEB_FPS = FPS

@@ -408,7 +408,18 @@ class Enemy:
             self._spawn_death_particles()
 
     def _spawn_death_particles(self):
-        for _ in range(30):
+        # Web performance: limit particle count
+        try:
+            from main import IS_WEB, WEB_MAX_PARTICLES
+
+            if IS_WEB:
+                particle_count = min(30, WEB_MAX_PARTICLES)
+            else:
+                particle_count = 30
+        except ImportError:
+            particle_count = 30
+
+        for _ in range(particle_count):
             self.particles.append(EnemyParticle(self.rect.centerx, self.rect.centery))
 
     # ------------------------------------------------------------------
@@ -658,6 +669,19 @@ class EnemyManager:
         self._seen_platform_xs: set = set()
         self._seen_ground_xs: set = set()
 
+        # Cache web platform constants at init time — avoids repeated imports
+        self._is_web = False
+        self._web_max_enemies = 999
+        self._web_max_particles = 999
+        try:
+            from main import IS_WEB, WEB_MAX_ENEMIES, WEB_MAX_PARTICLES
+
+            self._is_web = IS_WEB
+            self._web_max_enemies = WEB_MAX_ENEMIES
+            self._web_max_particles = WEB_MAX_PARTICLES
+        except ImportError:
+            pass
+
         # Pre-spawn a few enemies spread across platforms
         self._initial_spawn()
 
@@ -670,6 +694,17 @@ class EnemyManager:
 
     def _spawn_on_new_surfaces(self):
         """Spawn enemies on platforms and ground segments we haven't seen yet."""
+        # Web performance: check enemy limit before spawning
+        try:
+            from main import IS_WEB, WEB_MAX_ENEMIES
+
+            if IS_WEB:
+                alive_count = sum(1 for e in self.enemies if e.alive)
+                if alive_count >= WEB_MAX_ENEMIES:
+                    return
+        except ImportError:
+            pass
+
         # Spawn on new platforms (every 3rd platform)
         for plat in self.platforms:
             key = plat.rect.x
@@ -679,6 +714,17 @@ class EnemyManager:
 
             # Spawn on every 3rd platform (same pattern as initial spawn)
             if len(self._seen_platform_xs) % 3 == 0:
+                # Check limit again before each spawn
+                try:
+                    from main import IS_WEB, WEB_MAX_ENEMIES
+
+                    if IS_WEB:
+                        alive_count = sum(1 for e in self.enemies if e.alive)
+                        if alive_count >= WEB_MAX_ENEMIES:
+                            return
+                except ImportError:
+                    pass
+
                 x = plat.rect.centerx - ENEMY_WIDTH // 2
                 y = plat.rect.top - ENEMY_HEIGHT
                 self.enemies.append(Enemy(x, y, home_surface=plat))
@@ -692,6 +738,17 @@ class EnemyManager:
 
             # Spawn on every other ground segment (same pattern as initial spawn)
             if len(self._seen_ground_xs) % 2 == 0:
+                # Check limit again before each spawn
+                try:
+                    from main import IS_WEB, WEB_MAX_ENEMIES
+
+                    if IS_WEB:
+                        alive_count = sum(1 for e in self.enemies if e.alive)
+                        if alive_count >= WEB_MAX_ENEMIES:
+                            return
+                except ImportError:
+                    pass
+
                 x = seg.rect.left + random.randint(60, max(61, seg.rect.width - 100))
                 y = seg.rect.top - ENEMY_HEIGHT
                 self.enemies.append(Enemy(x, y, home_surface=seg))
@@ -717,13 +774,17 @@ class EnemyManager:
                 self.enemies.append(Enemy(x, y, home_surface=seg))
 
     def _spawn_new(self):
-        # Web performance: limit max enemies
-        import sys
+        # Web performance: limit max enemies using constants from main.py
+        try:
+            from main import IS_WEB, WEB_MAX_ENEMIES
 
-        if sys.platform == "emscripten":
-            alive_count = sum(1 for e in self.enemies if e.alive)
-            if alive_count >= 3:  # Max 3 enemies for web
-                return
+            if IS_WEB:
+                alive_count = sum(1 for e in self.enemies if e.alive)
+                if alive_count >= WEB_MAX_ENEMIES:
+                    return
+        except ImportError:
+            # Fallback if main.py constants not available
+            pass
 
         candidates = [p for p in self.platforms if not p.glitch or p.visible]
         if not candidates:
@@ -769,6 +830,9 @@ class EnemyManager:
             if enemy.projectile_speed_multiplier != proj_speed:
                 enemy.projectile_speed_multiplier = proj_speed
             enemy.update(self.platforms, self.ground_segments, player, health)
+
+        # Web performance: limit total particles across all enemies
+        self._limit_particles()
 
         # Weapon collisions — build alive_enemies once, share across all checks
         self._alive_enemies_cache = [e for e in self.enemies if e.alive]
@@ -820,6 +884,46 @@ class EnemyManager:
                 if e.just_died:
                     self.enemies_killed += 1
                     e.just_died = False
+
+    def _limit_particles(self):
+        """Limit total particles across all enemies to WEB_MAX_PARTICLES on web platform."""
+        try:
+            from main import IS_WEB, WEB_MAX_PARTICLES
+
+            if not IS_WEB:
+                return
+
+            # Count total particles across all enemies
+            total_particles = sum(len(e.particles) for e in self.enemies)
+            if self.boss is not None:
+                total_particles += len(self.boss.particles)
+
+            # If over limit, prune oldest particles first
+            if total_particles > WEB_MAX_PARTICLES:
+                particles_to_remove = total_particles - WEB_MAX_PARTICLES
+
+                # Remove from regular enemies first (oldest particles = lowest lifetime)
+                for enemy in self.enemies:
+                    if particles_to_remove <= 0:
+                        break
+                    if enemy.particles:
+                        # Sort by lifetime (oldest = lowest lifetime remaining)
+                        enemy.particles.sort(key=lambda p: p.lifetime)
+                        remove_count = min(particles_to_remove, len(enemy.particles))
+                        enemy.particles = enemy.particles[remove_count:]
+                        particles_to_remove -= remove_count
+
+                # If still over limit, remove from boss particles
+                if (
+                    particles_to_remove > 0
+                    and self.boss is not None
+                    and self.boss.particles
+                ):
+                    self.boss.particles.sort(key=lambda p: p.lifetime)
+                    remove_count = min(particles_to_remove, len(self.boss.particles))
+                    self.boss.particles = self.boss.particles[remove_count:]
+        except ImportError:
+            pass
 
     # --- Collision helpers ---
     def _check_bullets(self, wm):
