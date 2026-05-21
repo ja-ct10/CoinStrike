@@ -82,12 +82,15 @@
             __import__(__name__).__file__ = main
 
             # now make a prompt
-            msg  = "Ready to start ! Please click/touch page"
+            msg  = "Click to start"
             platform.window.infobox.innerText = msg
             print("\n"*4, f"    * Waiting for media user engagement. {msg} *" , "\n"*4)
 
             while not platform.window.MM.UME:
                 await asyncio.sleep(.1)
+
+            # Hide infobox immediately after click
+            platform.window.infobox.style.display = "none"
 
         # start async top level machinery if not started and add a console in any case if requested.
         await TopLevel_async_handler.start_toplevel(platform.shell, console=window.python.config.debug)
@@ -105,7 +108,6 @@
         # if you don't reach that step
         # your main.py has an infinite sync loop somewhere !
 
-        platform.window.infobox.style.display = "none"
         platform.window.config.gui_divider = 1
         platform.window.window_resize()
         print("default.tmpl: done")
@@ -338,7 +340,7 @@
     >
     </canvas>
 
-    <div id="infobox">Loading CoinStrike... Click to start when ready!</div>
+    <div id="infobox">Click to start</div>
 
     <div id="html"></div>
 
