@@ -1,6 +1,8 @@
 import pygame
 import math
 import asyncio  # Required for Pygbag
+import sys
+import platform as platform_module
 from settings import *
 from camera import Camera
 from player import Player
@@ -25,6 +27,21 @@ except ImportError:
     # Fallback for web version
     def resource_path(path):
         return path
+
+
+# Detect if running in web browser (Pygbag/Emscripten)
+IS_WEB = sys.platform == "emscripten"
+
+# Web-specific performance optimizations
+if IS_WEB:
+    WEB_FPS = 30  # Reduce FPS for web to improve performance
+    WEB_MAX_ENEMIES = 3  # Limit max enemies on screen
+    WEB_MAX_PARTICLES = 20  # Limit particle effects
+    print("Running in web mode - performance optimizations enabled")
+else:
+    WEB_FPS = FPS
+    WEB_MAX_ENEMIES = 999
+    WEB_MAX_PARTICLES = 999
 
 
 pygame.init()
@@ -837,7 +854,7 @@ async def main():
     global game_stats, _max_combo
 
     while running:
-        clock.tick(FPS)
+        clock.tick(WEB_FPS)
         mouse_pos = pygame.mouse.get_pos()
 
         for event in pygame.event.get():
@@ -972,13 +989,19 @@ async def main():
                                 break
 
                 # Settings modal clicks
-                if game_state == PLAYING and show_settings_modal and not show_options_modal:
+                if (
+                    game_state == PLAYING
+                    and show_settings_modal
+                    and not show_options_modal
+                ):
                     if _settings_close_rect and _settings_close_rect.collidepoint(
                         event.pos
                     ):
                         show_settings_modal = False
                     else:
-                        for rect, label in zip(_settings_btn_rects, _settings_btn_labels):
+                        for rect, label in zip(
+                            _settings_btn_rects, _settings_btn_labels
+                        ):
                             if rect.collidepoint(event.pos):
                                 if label == "RESUME":
                                     show_settings_modal = False
@@ -1027,7 +1050,9 @@ async def main():
 
                 # Game Over buttons
                 if game_state == GAME_OVER:
-                    if _game_over_yes_rect and _game_over_yes_rect.collidepoint(event.pos):
+                    if _game_over_yes_rect and _game_over_yes_rect.collidepoint(
+                        event.pos
+                    ):
                         (
                             player,
                             platforms,
@@ -1051,7 +1076,9 @@ async def main():
                         camera.offset_x = 0
                         camera.offset_y = 0
                         game_state = PLAYING
-                    elif _game_over_no_rect and _game_over_no_rect.collidepoint(event.pos):
+                    elif _game_over_no_rect and _game_over_no_rect.collidepoint(
+                        event.pos
+                    ):
                         if audio_available:
                             pygame.mixer.music.pause()
                         game_state = MENU
@@ -1150,7 +1177,9 @@ async def main():
 
             # Optimized invincibility flicker check (bitwise AND is faster than modulo)
             if health.invincible_timer == 0 or (health.invincible_timer & 0x1F) < 16:
-                player.draw(screen, camera, weapon_manager=weapon_manager, health=health)
+                player.draw(
+                    screen, camera, weapon_manager=weapon_manager, health=health
+                )
 
             draw_boss_intro(screen, boss_intro_timer, BOSS_INTRO_DURATION)
 
@@ -1304,7 +1333,12 @@ async def main():
 
                 # Falling rocks
                 rock_manager.update(
-                    camera, ground_segments, platforms, player, health, difficulty_scaler
+                    camera,
+                    ground_segments,
+                    platforms,
+                    player,
+                    health,
+                    difficulty_scaler,
                 )
 
                 # Powerups — update effects and collection
@@ -1318,7 +1352,9 @@ async def main():
 
                 # Optimized camera smoothing — use integer math and early exit
                 # Cache screen center to avoid repeated division
-                screen_center_x = SCREEN_WIDTH >> 1  # Bitwise shift is faster than division
+                screen_center_x = (
+                    SCREEN_WIDTH >> 1
+                )  # Bitwise shift is faster than division
                 target_offset_x = -(player.rect.x - screen_center_x)
                 if target_offset_x > 0:
                     target_offset_x = 0
@@ -1373,7 +1409,9 @@ async def main():
             # Player (invincibility flicker) - optimized with bitwise check
             # Bitwise AND is ~2x faster than division+modulo for flicker effect
             if health.invincible_timer == 0 or (health.invincible_timer & 0x1F) < 16:
-                player.draw(screen, camera, weapon_manager=weapon_manager, health=health)
+                player.draw(
+                    screen, camera, weapon_manager=weapon_manager, health=health
+                )
 
             # --- HUD ---
             draw_hud_coin(screen, player)

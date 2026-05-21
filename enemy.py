@@ -717,6 +717,14 @@ class EnemyManager:
                 self.enemies.append(Enemy(x, y, home_surface=seg))
 
     def _spawn_new(self):
+        # Web performance: limit max enemies
+        import sys
+
+        if sys.platform == "emscripten":
+            alive_count = sum(1 for e in self.enemies if e.alive)
+            if alive_count >= 3:  # Max 3 enemies for web
+                return
+
         candidates = [p for p in self.platforms if not p.glitch or p.visible]
         if not candidates:
             return
