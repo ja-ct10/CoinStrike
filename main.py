@@ -19,7 +19,7 @@ from combo import ComboSystem
 from powerups import PowerupManager
 
 # Security features disabled for web version
-# from security import SecurityManager
+from security import SecurityManager
 
 try:
     from utils import resource_path
@@ -38,10 +38,12 @@ if IS_WEB:
     WEB_MAX_ENEMIES = 5  # Limit max enemies on screen
     WEB_MAX_PARTICLES = 30  # Limit particle effects
     print("Running in web mode - performance optimizations enabled")
+    security_manager = None
 else:
     WEB_FPS = FPS
     WEB_MAX_ENEMIES = 999
     WEB_MAX_PARTICLES = 999
+    security_manager = SecurityManager()
 
 
 pygame.init()
@@ -94,7 +96,6 @@ clock = pygame.time.Clock()
 import pygame
 from settings import *
 from utils import resource_path
-
 
 background = pygame.image.load(resource_path("assets/background.png")).convert()
 background = pygame.transform.scale(background, (SCREEN_WIDTH, SCREEN_HEIGHT))
@@ -1307,7 +1308,7 @@ async def main():
                 # Runs every 600 frames (10 seconds) to minimize performance impact
                 # Detects abnormal values and applies penalties if needed
                 # Reduced frequency from 300 to 600 frames for better performance
-                if game_frames % 600 == 0:
+                if game_frames % 600 == 0 and security_manager is not None:
                     cheat_detected = not security_manager.update(
                         player, health, weapon_manager
                     )
