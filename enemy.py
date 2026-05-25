@@ -992,7 +992,7 @@ class EnemyManager:
         boss_rect = self.boss.rect  # cache rect to avoid repeated attribute access
         for bullet in wm.bullets:
             if bullet.alive and bullet.rect.colliderect(boss_rect):
-                self.boss.take_hit(10)  # 3× normal bullet damage during boss fight
+                self.boss.take_hit(8)  # 3× normal bullet damage during boss fight
                 bullet.alive = False
 
     def _check_grenades_boss(self, wm):
@@ -1005,10 +1005,17 @@ class EnemyManager:
         for grenade in wm.grenades:
             if not grenade.exploding:
                 continue
+            if not hasattr(grenade, "hit_boss"):
+                grenade.hit_boss = False
+
+            if grenade.hit_boss:
+                continue
+
             dx = boss_cx - grenade.x
             dy = boss_cy - grenade.y
             if dx * dx + dy * dy <= radius_sq:
-                self.boss.take_hit(18)  # 3× normal grenade damage during boss fight
+                self.boss.take_hit(12)  # 3× normal grenade damage during boss fight
+                grenade.hit_boss = True
 
     def _check_spears_boss(self, wm):
         if self.boss is None or not self.boss.alive:
@@ -1021,7 +1028,7 @@ class EnemyManager:
             _SCRATCH_RECT.x = int(spear.x) - 20
             _SCRATCH_RECT.y = int(spear.y) - 4
             if _SCRATCH_RECT.colliderect(self.boss.rect):
-                self.boss.take_hit(18)  # 3× normal spear damage during boss fight
+                self.boss.take_hit(5)  # 3× normal spear damage during boss fight
                 spear.alive = False
 
     def draw(self, screen, camera):

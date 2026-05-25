@@ -17,6 +17,7 @@ from difficulty import DifficultyScaler
 from rocks import RockManager
 from combo import ComboSystem
 from powerups import PowerupManager
+from score import calculate_score, load_high_score, save_high_score
 
 # Security features disabled for web version
 from security import SecurityManager
@@ -337,6 +338,12 @@ _stats_dist_surf: "pygame.Surface | None" = None
 _STATS_X = 10  # same as BAR_X in health.py
 _STATS_Y = 44  # just below the "HP" label (BAR_Y + BAR_H + 4 + label_h ≈ 44)
 
+_score_hud_cache_val = None
+_score_hud_cache_surf = None
+
+_highscore_hud_cache_val = None
+_highscore_hud_cache_surf = None
+
 
 def _get_stats_font():
     global _stats_font
@@ -395,6 +402,41 @@ def draw_hud_coin(screen, player):
     )
 
 
+def draw_hud_highscore(screen):
+    global _highscore_hud_cache_val, _highscore_hud_cache_surf
+
+    high_score = load_high_score()
+
+    if high_score != _highscore_hud_cache_val:
+        _highscore_hud_cache_val = high_score
+        _highscore_hud_cache_surf = coin_hud_font.render(
+            f"High Score: {high_score}", True, (255, 215, 0)
+        )
+
+    # Position directly below coin counter
+    draw_x = 470
+    draw_y = ICON_MID_Y + 22
+
+    screen.blit(_highscore_hud_cache_surf, (draw_x, draw_y))
+
+
+def draw_hud_score(screen, enemy_manager, live_score):
+    global _score_hud_cache_val, _score_hud_cache_surf
+
+    if enemy_manager.enemies_killed == 0:
+        return
+
+    if live_score != _score_hud_cache_val:
+        _score_hud_cache_val = live_score
+        _score_hud_cache_surf = coin_hud_font.render(
+            f"Score: {live_score}", True, (80, 255, 180)
+        )
+
+    draw_x = 320
+    draw_y = 20
+    screen.blit(_score_hud_cache_surf, (draw_x, draw_y))
+
+
 def reset_game():
     p = Player(20, 200)
     difficulty_scaler = DifficultyScaler()
@@ -431,9 +473,10 @@ def reset_game():
 
 def _reset_stats():
     """Reset per-game tracking variables. Call after every reset_game()."""
-    global game_stats, _max_combo, _MC_STATS_SURF, _MC_STATS_DATA
+    global game_stats, _max_combo, _MC_STATS_SURF, _MC_STATS_DATA, _live_score
     game_stats = {}
     _max_combo = 0
+    _live_score = 0
     _MC_STATS_SURF = None
     _MC_STATS_DATA = None
 
@@ -697,8 +740,8 @@ def _build_mc_stats_surf(stats: dict) -> pygame.Surface:
     """Render the stats panel into a surface. Called once per game completion."""
     title_font, stats_font = _get_mc_fonts()
 
-    # Modal dimensions
-    modal_w, modal_h = 560, 340
+    # Modal dimensions — taller to fit extra rows
+    modal_w, modal_h = 560, 410
     surf = pygame.Surface((modal_w, modal_h), pygame.SRCALPHA)
     surf.fill((8, 6, 28, 240))
     pygame.draw.rect(
@@ -726,7 +769,13 @@ def _build_mc_stats_surf(stats: dict) -> pygame.Surface:
     pygame.draw.line(surf, (160, 32, 240), (20, 74), (modal_w - 20, 74))
 
     # Stats rows — label on left, value on right
+    score = stats.get("score", 0)
+    high_score = load_high_score()
+    is_new_record = stats.get("new_record", False)
+
     rows = [
+        ("Score", str(score)),
+        ("High Score", "NEW RECORD!" if is_new_record else str(high_score)),
         ("Time", stats.get("time_str", "0:00")),
         ("Coins Collected", str(stats.get("coins", 0))),
         ("Enemies Killed", str(stats.get("kills", 0))),
@@ -744,7 +793,16 @@ def _build_mc_stats_surf(stats: dict) -> pygame.Surface:
         surf.blit(row_bg, (12, row_y))
 
         label_surf = stats_font.render(label, True, (160, 180, 255))
-        value_surf = stats_font.render(value, True, (255, 221, 68))
+
+        # High Score row: gold if new record, cyan otherwise
+        if label == "High Score" and is_new_record:
+            value_color = (255, 80, 80)  # red-ish to stand out
+        elif label == "Score":
+            value_color = (80, 255, 180)  # green for score
+        else:
+            value_color = (255, 221, 68)
+
+        value_surf = stats_font.render(value, True, value_color)
         surf.blit(
             label_surf, (20, row_y + (row_h - 4) // 2 - label_surf.get_height() // 2)
         )
@@ -839,6 +897,7 @@ BOSS_INTRO_DURATION = 180  # 3 seconds at 60fps
 boss_intro_timer = 0
 game_stats: dict = {}  # populated when boss is defeated
 _max_combo: int = 0  # peak combo this game
+_live_score: int = 0
 
 
 # Main game loop wrapped in async function for Pygbag compatibility
@@ -852,7 +911,7 @@ async def main():
     global _settings_btn_rects, _settings_btn_labels, _options_close_rect
     global _game_over_yes_rect, _game_over_no_rect
     global _mission_complete_restart_rect, _mission_complete_quit_rect
-    global game_stats, _max_combo
+    global game_stats, _max_combo, _live_score
 
     while running:
         clock.tick(WEB_FPS)
@@ -1290,6 +1349,8 @@ async def main():
                         bonus = combo_system.on_kill(player)
                         player.coins_collected += bonus
                         player.coins_earned += bonus
+                        combo_multiplier = max(1, combo_system.count)
+                        _live_score += 5 * combo_multiplier
 
                 # Combo: reset on damage (only check if combo is active)
                 if combo_system.count > 0 and health.hp < hp_before:
@@ -1319,8 +1380,7 @@ async def main():
                 # ================================================================
 
                 # Transition to mission complete when boss is defeated
-                if enemy_manager.boss_defeated:
-                    # Snapshot end-of-game statistics
+                if enemy_manager.boss_defeated and game_state == PLAYING:
                     total_secs = game_frames // 60
                     game_stats = {
                         "time_str": f"{total_secs // 60}:{total_secs % 60:02d}",
@@ -1329,9 +1389,11 @@ async def main():
                         "distance": int(player.world_x // 100),
                         "weapons": weapon_manager.weapons_bought,
                         "max_combo": _max_combo,
+                        "game_frames": game_frames,
+                        "score": _live_score,
+                        "new_record": save_high_score(_live_score),
                     }
                     game_state = MISSION_COMPLETE
-
                 # Falling rocks
                 rock_manager.update(
                     camera,
@@ -1416,6 +1478,8 @@ async def main():
 
             # --- HUD ---
             draw_hud_coin(screen, player)
+            draw_hud_highscore(screen)
+            draw_hud_score(screen, enemy_manager, _live_score)
             shop.draw(screen)
             mission.draw(screen)
             settings_icon.draw(screen)
