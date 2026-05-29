@@ -43,6 +43,7 @@ pygame.init()
 # Initialize audio with error handling for systems without audio devices
 audio_available = True
 try:
+    pygame.mixer.pre_init(44100, -16, 2, 1024)
     pygame.mixer.init()
 except pygame.error as e:
     print(f"Warning: Audio initialization failed - {e}")
@@ -58,11 +59,12 @@ except pygame.error as e:
 # ================================================================
 
 # Load background music if audio is available
+bg_music = None
 if audio_available:
     try:
-        pygame.mixer.music.load(resource_path("assets/sounds/background-music.ogg"))
-        pygame.mixer.music.set_volume(0.5)
-        pygame.mixer.music.play(-1)
+        bg_music = pygame.mixer.Sound(resource_path("assets/sounds/background-music.ogg"))
+        bg_music.set_volume(0.5)
+        bg_music.play(-1)
     except pygame.error as e:
         print(f"Warning: Could not load background music - {e}")
         audio_available = False
@@ -902,7 +904,7 @@ async def main():
     global _settings_btn_rects, _settings_btn_labels, _options_close_rect
     global _game_over_yes_rect, _game_over_no_rect
     global _mission_complete_restart_rect, _mission_complete_quit_rect
-    global game_stats, _max_combo, _live_score
+    global game_stats, _max_combo, _live_score, bg_music
 
     last_tick = pygame.time.get_ticks()
     frame_delay = 1000 // WEB_FPS
@@ -965,7 +967,7 @@ async def main():
                             game_frames = 0
                             _reset_stats()
                             if audio_available:
-                                pygame.mixer.music.unpause()
+                                pygame.mixer.unpause()
                             game_state = PLAYING
                             camera.offset_x = 0
                             camera.offset_y = 0
@@ -1024,7 +1026,7 @@ async def main():
                                 game_frames = 0
                                 _reset_stats()
                                 if audio_available:
-                                    pygame.mixer.music.unpause()
+                                    pygame.mixer.unpause()
                                 game_state = PLAYING
                                 camera.offset_x = 0
                                 camera.offset_y = 0
@@ -1085,9 +1087,9 @@ async def main():
                                     ) = reset_game()
                                     game_frames = 0
                                     _reset_stats()
-                                    if audio_available:
-                                        pygame.mixer.music.stop()
-                                        pygame.mixer.music.play(-1)
+                                    if audio_available and bg_music:
+                                        bg_music.stop()
+                                        bg_music.play(-1)
                                     camera.offset_x = 0
                                     camera.offset_y = 0
                                     show_settings_modal = False
@@ -1098,7 +1100,7 @@ async def main():
                                 elif label == "QUIT":
                                     show_settings_modal = False
                                     if audio_available:
-                                        pygame.mixer.music.pause()
+                                        pygame.mixer.pause()
                                     game_state = MENU
                                 break
 
@@ -1132,9 +1134,9 @@ async def main():
                         ) = reset_game()
                         game_frames = 0
                         _reset_stats()
-                        if audio_available:
-                            pygame.mixer.music.stop()
-                            pygame.mixer.music.play(-1)
+                        if audio_available and bg_music:
+                            bg_music.stop()
+                            bg_music.play(-1)
                         camera.offset_x = 0
                         camera.offset_y = 0
                         game_state = PLAYING
@@ -1142,7 +1144,7 @@ async def main():
                         event.pos
                     ):
                         if audio_available:
-                            pygame.mixer.music.pause()
+                            pygame.mixer.pause()
                         game_state = MENU
 
                 # Mission Complete buttons
@@ -1168,9 +1170,9 @@ async def main():
                         ) = reset_game()
                         game_frames = 0
                         _reset_stats()
-                        if audio_available:
-                            pygame.mixer.music.stop()
-                            pygame.mixer.music.play(-1)
+                        if audio_available and bg_music:
+                            bg_music.stop()
+                            bg_music.play(-1)
                         camera.offset_x = 0
                         camera.offset_y = 0
                         game_state = PLAYING
@@ -1179,7 +1181,7 @@ async def main():
                         and _mission_complete_quit_rect.collidepoint(event.pos)
                     ):
                         if audio_available:
-                            pygame.mixer.music.pause()
+                            pygame.mixer.pause()
                         game_state = MENU
 
                 if (
@@ -1407,7 +1409,7 @@ async def main():
                 )
 
                 # Powerups — update effects and collection
-                powerup_manager.update(player, health, weapon_manager, coin_manager)
+                powerup_manager.update(player, health, weapon_manager, coin_manager, combo_system)
                 powerup_manager.prune(player.world_x, 3 * SCREEN_WIDTH)
 
                 health.update(player, ground_segments, platforms)

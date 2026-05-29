@@ -283,7 +283,7 @@ class PowerupManager:
         self.powerups.append(Powerup(x, y, pu_type))
 
     # ------------------------------------------------------------------
-    def update(self, player, health, weapon_manager, coin_manager):
+    def update(self, player, health, weapon_manager, coin_manager, combo_system=None):
         """Call every frame."""
         # Single pass: bob animation + collection check together
         player_rect = player.rect
@@ -304,7 +304,7 @@ class PowerupManager:
             if effect["timer"] > 0:
                 still_active.append(effect)
             else:
-                self._expire(effect["type"], player)
+                self._expire(effect["type"], player, combo_system)
                 set_dirty = True
         self.active_effects = still_active
         if set_dirty:
@@ -335,7 +335,7 @@ class PowerupManager:
             self.active_effects = [
                 e for e in self.active_effects if e["type"] != "turbo"
             ]
-            player.speed_multiplier = max(player.speed_multiplier, 1.5)
+            player.speed_multiplier = max(player.speed_multiplier, 2.0)
             self.active_effects.append({"type": "turbo", "timer": _TYPES["turbo"][0]})
             self._active_set.add("turbo")
 
@@ -365,11 +365,13 @@ class PowerupManager:
             for w in weapon_manager.owned:
                 weapon_manager.ammo[w] = limits.get(w, weapon_manager.ammo.get(w, 0))
 
-    def _expire(self, pu_type: str, player):
+    def _expire(self, pu_type: str, player, combo_system=None):
         """Remove the effect when the timer runs out."""
         if pu_type == "turbo":
-            # Only reset if no other speed source is active (combo buff)
-            if player.speed_multiplier >= 1.5:
+            # If combo buff is active, return to 1.4 speed multiplier, else 1.0
+            if combo_system is not None and combo_system.is_buff_active():
+                player.speed_multiplier = 1.4
+            else:
                 player.speed_multiplier = 1.0
 
     # ------------------------------------------------------------------
