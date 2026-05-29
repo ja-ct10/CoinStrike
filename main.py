@@ -30,20 +30,11 @@ except ImportError:
         return path
 
 
-# Detect if running in web browser (Pygbag/Emscripten)
-IS_WEB = sys.platform == "emscripten"
-
-# Web-specific performance optimizations
+# Detect if running in web browser (Pygbag/Emscripten) (imported from settings)
 if IS_WEB:
-    WEB_FPS = 60  # Target 60 FPS for web
-    WEB_MAX_ENEMIES = 5  # Limit max enemies on screen
-    WEB_MAX_PARTICLES = 30  # Limit particle effects
     print("Running in web mode - performance optimizations enabled")
     security_manager = None
 else:
-    WEB_FPS = FPS
-    WEB_MAX_ENEMIES = 999
-    WEB_MAX_PARTICLES = 999
     security_manager = SecurityManager()
 
 

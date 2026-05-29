@@ -1,10 +1,24 @@
 import pygame
 from utils import resource_path
+import sys
 
 # Screen
 SCREEN_WIDTH = 1024
 SCREEN_HEIGHT = 576
 FPS = 60
+
+# Detect if running in web browser (Pygbag/Emscripten)
+IS_WEB = sys.platform == "emscripten"
+
+# Web-specific performance optimizations
+if IS_WEB:
+    WEB_FPS = 60  # Target 60 FPS for web
+    WEB_MAX_ENEMIES = 5  # Limit max enemies on screen
+    WEB_MAX_PARTICLES = 30  # Limit particle effects
+else:
+    WEB_FPS = FPS
+    WEB_MAX_ENEMIES = 999
+    WEB_MAX_PARTICLES = 999
 
 PLAYER_WIDTH = 70
 PLAYER_HEIGHT = 80
