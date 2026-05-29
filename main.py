@@ -69,7 +69,7 @@ except pygame.error as e:
 # Load background music if audio is available
 if audio_available:
     try:
-        pygame.mixer.music.load(resource_path("assets/sounds/background-music.mp3"))
+        pygame.mixer.music.load(resource_path("assets/sounds/background-music.ogg"))
         pygame.mixer.music.set_volume(0.5)
         pygame.mixer.music.play(-1)
     except pygame.error as e:
