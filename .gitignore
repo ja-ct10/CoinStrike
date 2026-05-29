@@ -35,5 +35,6 @@ Thumbs.db
 
 # Keep docs folder for GitHub Pages
 !docs/
-docs/*.tar.gz
-docs/*.apk
+
+# Web build temp directory
+coinstrike/

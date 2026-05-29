@@ -905,7 +905,10 @@ async def main():
     global game_stats, _max_combo, _live_score
 
     while running:
-        clock.tick(WEB_FPS)
+        if IS_WEB:
+            clock.tick()  # Calculate delta time without sleeping to avoid capping at 30 FPS
+        else:
+            clock.tick(WEB_FPS)
         mouse_pos = pygame.mouse.get_pos()
 
         for event in pygame.event.get():
