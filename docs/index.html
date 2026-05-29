@@ -189,7 +189,8 @@ function show_infobox() {
             font-family: 'Outfit', sans-serif;
             margin: 0;
             padding: 0;
-            background: radial-gradient(circle, rgba(16, 12, 48, 0.85) 0%, rgba(6, 4, 16, 0.98) 100%), url('loading-page.jpg') no-repeat center center fixed;
+            background: #060410 url('loading-page.jpg') no-repeat center center fixed;
+            background-blend-mode: multiply;
             background-size: cover;
             color: #ffffff;
             height: 100vh;
@@ -260,20 +261,20 @@ function show_infobox() {
         }
 
         #progress::-webkit-progress-value {
-            background: linear-gradient(90deg, #a020f0 0%, #00ffff 100%);
+            background: #00ffff;
             box-shadow: 0 0 10px rgba(0, 255, 255, 0.6);
             border-radius: 6px;
         }
 
         #progress::-moz-progress-bar {
-            background: linear-gradient(90deg, #a020f0 0%, #00ffff 100%);
+            background: #00ffff;
             box-shadow: 0 0 10px rgba(0, 255, 255, 0.6);
             border-radius: 6px;
         }
 
         #infobox {
             position: relative;
-            background: linear-gradient(90deg, #ff007f 0%, #ff5500 100%) !important;
+            background: #a020f0 !important;
             color: #ffffff !important;
             font-family: 'Press Start 2P', cursive;
             font-size: 12px !important;
@@ -281,7 +282,7 @@ function show_infobox() {
             padding: 14px 28px !important;
             border-radius: 10px;
             border: 2px solid #ffdd44;
-            box-shadow: 0 0 20px rgba(255, 0, 127, 0.5),
+            box-shadow: 0 0 20px rgba(160, 32, 240, 0.6),
                         inset 0 0 8px rgba(255, 221, 68, 0.5);
             cursor: pointer;
             margin-top: 15px;
@@ -292,14 +293,14 @@ function show_infobox() {
 
         #infobox:hover {
             transform: scale(1.08);
-            box-shadow: 0 0 30px rgba(255, 0, 127, 0.8),
+            box-shadow: 0 0 30px rgba(160, 32, 240, 0.9),
                         inset 0 0 12px rgba(255, 221, 68, 0.8);
             border-color: #ffffff;
         }
 
         @keyframes pulseGlow {
-            from { transform: scale(1); box-shadow: 0 0 12px rgba(255, 0, 127, 0.4); }
-            to { transform: scale(1.03); box-shadow: 0 0 22px rgba(255, 0, 127, 0.7); }
+            from { transform: scale(1); box-shadow: 0 0 12px rgba(160, 32, 240, 0.4); }
+            to { transform: scale(1.03); box-shadow: 0 0 22px rgba(160, 32, 240, 0.8); }
         }
 
         canvas.emscripten {
@@ -322,7 +323,7 @@ function show_infobox() {
         }
     </style>
 
-    <script src="https://pygame-web.github.io/cdn/0.9.3//browserfs.min.js"></script>
+    <script src="https://pygame-web.github.io/cdn/0.9.3/browserfs.min.js"></script>
 </head>
 
 <body>

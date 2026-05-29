@@ -64,7 +64,6 @@ if audio_available:
     try:
         bg_music = pygame.mixer.Sound(resource_path("assets/sounds/background-music.ogg"))
         bg_music.set_volume(0.5)
-        bg_music.play(-1)
     except pygame.error as e:
         print(f"Warning: Could not load background music - {e}")
         audio_available = False
@@ -580,7 +579,7 @@ _OPTIONS_X_SURF: "pygame.Surface | None" = None  # "X" label — rendered once
 def draw_options_modal(screen, mouse_pos):
     global _OPTIONS_MODAL_STATIC, _OPTIONS_OVERLAY
 
-    modal_w, modal_h = 500, 484
+    modal_w, modal_h = 680, 500
     modal_x = SCREEN_WIDTH // 2 - modal_w // 2
     modal_y = SCREEN_HEIGHT // 2 - modal_h // 2
 
@@ -906,6 +905,14 @@ async def main():
     global _mission_complete_restart_rect, _mission_complete_quit_rect
     global game_stats, _max_combo, _live_score, bg_music
 
+    if audio_available and bg_music:
+        try:
+            pygame.mixer.unpause()
+            if not pygame.mixer.get_busy():
+                bg_music.play(-1)
+        except Exception as e:
+            print(f"Audio autoplay failed: {e}")
+
     last_tick = pygame.time.get_ticks()
     frame_delay = 1000 // WEB_FPS
 
@@ -924,6 +931,16 @@ async def main():
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
+
+            # Safeguard to play or resume music on user gesture inside the Pygame canvas
+            if event.type in (pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN):
+                if audio_available and bg_music:
+                    try:
+                        pygame.mixer.unpause()
+                        if not pygame.mixer.get_busy():
+                            bg_music.play(-1)
+                    except Exception:
+                        pass
 
             if event.type == pygame.KEYDOWN:
                 if game_state == GAME_OVER:
