@@ -904,9 +904,17 @@ async def main():
     global _mission_complete_restart_rect, _mission_complete_quit_rect
     global game_stats, _max_combo, _live_score
 
+    last_tick = pygame.time.get_ticks()
+    frame_delay = 1000 // WEB_FPS
+
     while running:
         if IS_WEB:
-            clock.tick()  # Calculate delta time without sleeping to avoid capping at 30 FPS
+            now = pygame.time.get_ticks()
+            if now - last_tick < frame_delay:
+                await asyncio.sleep(0)
+                continue
+            last_tick = now
+            clock.tick()
         else:
             clock.tick(WEB_FPS)
         mouse_pos = pygame.mouse.get_pos()
