@@ -29,6 +29,10 @@ class TouchTests(unittest.TestCase):
         self.controls = TouchControls()
         self.controls.set_active(True)
         self.keyboard = defaultdict(bool)
+        self.manager = WeaponManager()
+        for weapon in ("gun", "spear", "grenade"):
+            self.manager.grant(weapon)
+        self.controls.sync_weapons(self.manager)
 
     def finger(self, kind, key, finger=1, touch=1, pos=None):
         x, y = pos or self.controls.rects[key].center
@@ -126,8 +130,112 @@ class TouchTests(unittest.TestCase):
                 for other, other_rect in self.controls.rects.items():
                     if key != other:
                         self.assertFalse(rect.colliderect(other_rect))
-            ammo = pygame.Rect((SCREEN_WIDTH - 256) // 2, SCREEN_HEIGHT - 62, 256, 52)
-            self.assertFalse(any(ammo.colliderect(r) for r in self.controls.rects.values()))
+            ammo = self.manager.draw_ammo_hud(
+                pygame.display.get_surface(), centered=True,
+                bottom_margin=self.controls.bottom_margin, avoid_rects=self.controls.hud_obstacles)
+            self.assertFalse(any(ammo.colliderect(r) for r in self.controls.hud_obstacles))
+
+    def test_weapon_visibility_combinations(self):
+        base = {pygame.K_LEFT, pygame.K_RIGHT, pygame.K_SPACE}
+        cases = [([], base), (["gun"], base | {pygame.K_f}),
+                 (["spear"], base | {pygame.K_t}), (["grenade"], base | {pygame.K_t}),
+                 (["gun", "spear"], base | {pygame.K_f, pygame.K_t}),
+                 (["gun", "grenade"], base | {pygame.K_f, pygame.K_t})]
+        for weapons, expected in cases:
+            with self.subTest(weapons=weapons):
+                self.manager.owned.clear()
+                self.manager.ammo.clear()
+                for weapon in weapons:
+                    self.manager.grant(weapon)
+                self.controls.sync_weapons(self.manager)
+                self.assertEqual(set(self.controls.rects), expected)
+
+    def test_unusable_weapon_is_hidden_and_not_interactive(self):
+        gun_pos = self.controls.rects[pygame.K_f].center
+        self.manager.ammo["gun"] = 0
+        self.controls.sync_weapons(self.manager)
+        self.assertNotIn(pygame.K_f, self.controls.rects)
+        self.assertEqual(self.controls.handle_event(self.finger(pygame.FINGERDOWN, pygame.K_f, pos=gun_pos)),
+                         (False, None))
+        self.manager.owned.discard("gun")
+        self.manager.ammo["gun"] = 35
+        self.controls.sync_weapons(self.manager)
+        self.assertNotIn(pygame.K_f, self.controls.rects)
+        self.manager.grant("gun")
+        self.manager._gun_cooldown = 15
+        self.controls.sync_weapons(self.manager)
+        self.assertIn(pygame.K_f, self.controls.rects)
+
+    def test_last_round_hides_fire_and_keeps_other_holds(self):
+        self.manager.ammo["gun"] = 1
+        self.press(pygame.K_RIGHT, 1)
+        self.press(pygame.K_f, 2)
+        self.press(pygame.K_t, 3)
+        self.manager.handle_keydown(pygame.K_f, self.player())
+        self.controls.sync_weapons(self.manager)
+        self.assertNotIn(pygame.K_f, self.controls.rects)
+        self.assertFalse(self.keys()[pygame.K_f])
+        self.assertTrue(self.keys()[pygame.K_RIGHT])
+        self.assertTrue(self.keys()[pygame.K_t])
+
+    def test_throw_fallback_changes_icon_and_keeps_hold_until_all_ammo_is_gone(self):
+        self.press(pygame.K_t)
+        grenade_icon = self.controls._button_surface(pygame.K_t, False)
+        self.manager.ammo["grenade"] = 1
+        self.manager.handle_keydown(pygame.K_t, self.player())
+        self.controls.sync_weapons(self.manager)
+        self.assertEqual(self.manager.get_throw_weapon(), "spear")
+        self.assertTrue(self.keys()[pygame.K_t])
+        self.assertIsNot(self.controls._button_surface(pygame.K_t, False), grenade_icon)
+        self.manager.ammo["spear"] = 1
+        self.manager._throw_cooldown = 0
+        self.manager.handle_keydown(pygame.K_t, self.player())
+        self.controls.sync_weapons(self.manager)
+        self.assertNotIn(pygame.K_t, self.controls.rects)
+        self.assertFalse(self.keys()[pygame.K_t])
+        self.manager.grant("spear")
+        self.controls.sync_weapons(self.manager)
+        self.assertIn(pygame.K_t, self.controls.rects)
+
+    def test_gap_closing_clears_moved_action_only_and_keeps_jump_fixed(self):
+        jump = self.controls.rects[pygame.K_SPACE].copy()
+        old_gun_pos = self.controls.rects[pygame.K_f].center
+        self.press(pygame.K_f, 1)
+        self.press(pygame.K_RIGHT, 2)
+        self.press(pygame.K_SPACE, 3)
+        self.keys()  # Consume the initial jump edge before reflow.
+        self.manager.owned.difference_update(("spear", "grenade"))
+        self.controls.sync_weapons(self.manager)
+        self.assertEqual(self.controls.rects[pygame.K_SPACE], jump)
+        self.assertEqual(self.controls.rects[pygame.K_SPACE].left - self.controls.rects[pygame.K_f].right,
+                         self.controls._layout[2])
+        self.assertFalse(self.keys()[pygame.K_f])
+        self.assertTrue(self.keys()[pygame.K_RIGHT])
+        self.assertTrue(self.keys()[pygame.K_SPACE])
+        self.assertEqual(self.controls.handle_event(self.finger(pygame.FINGERDOWN, pygame.K_f, pos=old_gun_pos)),
+                         (False, None))
+        self.keyboard[pygame.K_f] = True
+        self.assertTrue(self.keys()[pygame.K_f])
+
+    def test_circular_hit_target_rejects_rectangular_corners(self):
+        rect = self.controls.rects[pygame.K_f]
+        self.assertEqual(self.controls.handle_event(self.finger(pygame.FINGERDOWN, pygame.K_f, pos=rect.topleft)),
+                         (False, None))
+        self.assertEqual(self.press(pygame.K_f), (True, pygame.K_f))
+
+    def test_cached_circles_are_compact_and_transparent(self):
+        for width in (320, 390, 693, 1024, 1280):
+            self.controls.resize(width, width * 9 / 16)
+            surf = self.controls._button_surface(pygame.K_SPACE, False)
+            self.assertIs(self.controls._button_surface(pygame.K_SPACE, False), surf)
+            self.assertEqual(surf.get_at((0, 0)).a, 0)
+            scale = width / SCREEN_WIDTH
+            self.assertLessEqual(self.controls._layout[1] * scale, 49)
+            self.assertGreaterEqual(surf.get_width() * scale, 44)
+
+    def test_original_desktop_ammo_position_is_unchanged(self):
+        rect = self.manager.draw_ammo_hud(pygame.display.get_surface())
+        self.assertEqual(rect.topleft, (10, SCREEN_HEIGHT - 62))
 
     def test_browser_detects_touch_and_cancels_without_changing_manual_choice(self):
         data = dict(touch=True, reset=0, width=693, height=390, left=0, right=0, bottom=0)

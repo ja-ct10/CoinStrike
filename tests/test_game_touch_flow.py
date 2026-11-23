@@ -27,7 +27,7 @@ class GameTouchFlowTests(unittest.TestCase):
         game["save_high_score"] = lambda *args: False
         controls = game["touch_controls"]
         game["menu_button_rects"] = game["draw_menu"](game["screen"], 0)
-        screenshots = Path("build/touch-qa")
+        screenshots = Path("build/touch-qa/compact")
         screenshots.mkdir(parents=True, exist_ok=True)
 
         def touch(pos, kind=pygame.FINGERDOWN, finger=100):
@@ -54,12 +54,17 @@ class GameTouchFlowTests(unittest.TestCase):
             yield [touch(game["_options_close_rect"].center)]
             yield [touch(game["menu_button_rects"][0].center)]
             self.assertEqual(game["game_state"], game["PLAYING"])
+            self.assertEqual(set(controls.rects), {pygame.K_LEFT, pygame.K_RIGHT, pygame.K_SPACE})
+            pygame.image.save(game["screen"], screenshots / "no-weapons.png")
             yield [touch(game["shop"].rect.center)]
             self.assertTrue(game["show_shop_modal"])
             pos = game["_shop_buy_rects"][1][0].center
             yield [touch(pos), duplicate(pos)]
             self.assertFalse(game["show_shop_modal"])
             self.assertIn("gun", game["weapon_manager"].owned)
+            self.assertIn(pygame.K_f, controls.rects)
+            self.assertNotIn(pygame.K_t, controls.rects)
+            pygame.image.save(game["screen"], screenshots / "gun.png")
             self.assertEqual(game["player"].coins_collected, 0)
             game["player"].on_ground = True
             start_x = game["player"].world_x
@@ -91,6 +96,8 @@ class GameTouchFlowTests(unittest.TestCase):
             self.assertFalse(game["health"].game_over)
             self.assertFalse(controls.pointers)
             self.assertTrue(controls.enabled)
+            self.assertNotIn(pygame.K_f, controls.rects)
+            self.assertNotIn(pygame.K_t, controls.rects)
             game["game_state"] = game["MISSION_COMPLETE"]
             yield []
             yield [touch(game["_mission_complete_restart_rect"].center)]
@@ -110,6 +117,15 @@ class GameTouchFlowTests(unittest.TestCase):
             controls.resize(320, 180)
             yield []
             pygame.image.save(game["screen"], screenshots / "small-phone.png")
+            for name, weapons in (("spear", ["spear"]), ("grenade", ["grenade"]),
+                                  ("gun-spear", ["gun", "spear"]),
+                                  ("all-weapons", ["gun", "spear", "grenade"])):
+                game["weapon_manager"].owned.clear()
+                game["weapon_manager"].ammo.clear()
+                for weapon in weapons:
+                    game["weapon_manager"].grant(weapon)
+                yield []
+                pygame.image.save(game["screen"], screenshots / (name + ".png"))
             yield [pygame.event.Event(pygame.QUIT)]
 
         steps = script()

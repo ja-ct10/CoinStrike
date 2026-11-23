@@ -600,6 +600,13 @@ class WeaponManager:
     def _has_ammo(self, weapon_name):
         return self.ammo.get(weapon_name, 0) > 0
 
+    def can_use(self, weapon_name):
+        """Ownership and ammunition determine availability, independently of cooldown."""
+        return weapon_name in self.owned and self._has_ammo(weapon_name)
+
+    def get_throw_weapon(self):
+        return next((name for name in ("grenade", "spear") if self.can_use(name)), None)
+
     def _use_ammo(self, weapon_name):
         if weapon_name in self.ammo:
             self.ammo[weapon_name] = max(0, self.ammo[weapon_name] - 1)
@@ -607,8 +614,8 @@ class WeaponManager:
                 self.owned.discard(weapon_name)
 
     def handle_keydown(self, event_key, player, enemies=None, boss=None):
-        if event_key == pygame.K_f and "gun" in self.owned:
-            if self._gun_cooldown <= 0 and self._has_ammo("gun"):
+        if event_key == pygame.K_f and self.can_use("gun"):
+            if self._gun_cooldown <= 0:
                 bx = player.rect.right if player.facing_right else player.rect.left
                 # Spawn at upper-chest height — well above any platform the player stands on
                 by = player.rect.top + (player.rect.height // 3)
@@ -619,14 +626,15 @@ class WeaponManager:
         if event_key == pygame.K_t:
             if self._throw_cooldown <= 0:
                 cx, cy = player.rect.centerx, player.rect.centery
-                if "grenade" in self.owned and self._has_ammo("grenade"):
+                throw_weapon = self.get_throw_weapon()
+                if throw_weapon == "grenade":
                     target = self._find_throw_target(player, enemies, boss)
                     self.grenades.append(
                         Grenade(cx, cy, player.facing_right, target=target)
                     )
                     self._use_ammo("grenade")
                     self._throw_cooldown = self.THROW_COOLDOWN
-                elif "spear" in self.owned and self._has_ammo("spear"):
+                elif throw_weapon == "spear":
                     target = self._find_throw_target(player, enemies, boss)
                     self.spears.append(
                         Spear(cx, cy, player.facing_right, target=target)
@@ -713,8 +721,8 @@ class WeaponManager:
 
         screen.blit(img, (wx, wy))
 
-    def draw_ammo_hud(self, screen, centered=False, bottom_margin=10):
-        """Draw ammo counter bar bottom-left of screen."""
+    def draw_ammo_hud(self, screen, centered=False, bottom_margin=10, avoid_rects=()):
+        """Draw the original HUD, optionally avoiding touch targets; return its bounds."""
         if not self.owned:
             return
 
@@ -730,6 +738,11 @@ class WeaponManager:
         ]
         if centered:
             panel_x = (SCREEN_WIDTH - len(order) * (slot_w + slot_gap) + slot_gap) // 2
+        hud_rect = pygame.Rect(panel_x, panel_y - slot_h,
+                               len(order) * (slot_w + slot_gap) - slot_gap, slot_h)
+        if centered and any(hud_rect.colliderect(rect) for rect in avoid_rects):
+            panel_y = min(rect.top for rect in avoid_rects)
+            hud_rect.bottom = panel_y
 
         for i, weapon in enumerate(order):
             if weapon not in self.owned and weapon not in self.ammo:
@@ -772,3 +785,5 @@ class WeaponManager:
 
             # Key hint — pre-rendered static surface
             screen.blit(self._hud_hint_surfs[weapon], (sx + 36, sy + 38))
+
+        return hud_rect

@@ -134,7 +134,9 @@ Falling rocks spawn from above at increasing frequency — starting every 5 seco
 
 **Play in your browser:** [coinstrike.vercel.app](https://coinstrike.vercel.app/)
 
-Touch devices automatically show Left/Right, Jump, Fire, and Throw controls.
+Touch devices automatically show compact circular Left/Right and Jump controls.
+Fire appears while you own a Gun with ammo; Throw appears while you own a Spear
+or Grenade with ammo. Exhausted attacks disappear and reappear after repurchase.
 Hold movement or attack buttons and combine them with other fingers. Landscape
 orientation gives the clearest view. Shop, Settings, menus, and restart support taps.
 Keyboard controls remain available. Use **Options → On-screen controls** to show

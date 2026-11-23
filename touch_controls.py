@@ -29,9 +29,9 @@ def pointer_click(event):
 
 
 class TouchControls:
-    LABELS = {
-        pygame.K_LEFT: "LEFT", pygame.K_RIGHT: "RIGHT",
-        pygame.K_SPACE: "JUMP", pygame.K_f: "FIRE", pygame.K_t: "THROW",
+    ICONS = {
+        pygame.K_LEFT: "left", pygame.K_RIGHT: "right",
+        pygame.K_SPACE: "jump", pygame.K_f: "gun",
     }
 
     def __init__(self):
@@ -43,6 +43,7 @@ class TouchControls:
         self._browser_snapshot = None
         self._browser_reset = 0
         self._layout = None
+        self._weapons = (False, None)
         self.rects = {}
         self._surfaces = {}
         self._toggle_surfaces = {}
@@ -82,39 +83,102 @@ class TouchControls:
 
     def resize(self, width, height, safe_left=0, safe_right=0, safe_bottom=0):
         scale = max(0.1, min(width / SCREEN_WIDTH, height / SCREEN_HEIGHT))
-        size = max(72, math.ceil(44 / scale))
-        gap = max(12, math.ceil(8 / scale))
-        left = max(12, math.ceil((safe_left + 8) / scale))
-        right = max(12, math.ceil((safe_right + 8) / scale))
-        bottom = max(12, math.ceil((safe_bottom + 8) / scale))
-        layout = (size, gap, left, right, bottom)
+        diameter = max(36, min(48, width * 0.06))
+        size = math.ceil(max(44, diameter) / scale)
+        visual_size = round(diameter / scale)
+        gap = math.ceil(8 / scale)
+        left = math.ceil((safe_left + 8) / scale)
+        right = math.ceil((safe_right + 8) / scale)
+        bottom = math.ceil((safe_bottom + 8) / scale)
+        layout = (size, visual_size, gap, left, right, bottom, scale)
         if layout == self._layout:
             return
         self._layout = layout
         self.bottom_margin = bottom
         self.clear()
+        self._surfaces.clear()
+        self._place_buttons()
+
+    def sync_weapons(self, manager):
+        weapons = (manager.can_use("gun"), manager.get_throw_weapon())
+        if weapons != self._weapons:
+            self._weapons = weapons
+            self._place_buttons()
+
+    def _place_buttons(self):
+        size, _, gap, left, right, bottom, _ = self._layout
         y = SCREEN_HEIGHT - bottom - size
-        x = SCREEN_WIDTH - right - size
-        self.rects = {
+        rects = {
             pygame.K_LEFT: pygame.Rect(left, y, size, size),
             pygame.K_RIGHT: pygame.Rect(left + size + gap, y, size, size),
-            pygame.K_f: pygame.Rect(x - size - gap, y, size, size),
-            pygame.K_t: pygame.Rect(x, y, size, size),
-            pygame.K_SPACE: pygame.Rect(x, y - size - gap, size, size),
         }
-        # Font and surfaces are rebuilt only when the displayed control size changes.
-        font = pygame.font.Font(resource_path("assets/fonts/PressStart2P-Regular.ttf"),
-                                max(9, int(size * 0.16)))
-        self._surfaces.clear()
-        for key, label in self.LABELS.items():
-            text = font.render(label, True, (220, 245, 255))
-            for pressed in (False, True):
-                surf = pygame.Surface((size, size), pygame.SRCALPHA)
-                surf.fill((16, 8, 40, 190 if pressed else 105))
-                pygame.draw.rect(surf, (255, 221, 68, 235) if pressed else (0, 220, 240, 155),
-                                 surf.get_rect(), 2, border_radius=10)
-                surf.blit(text, text.get_rect(center=(size // 2, size // 2)))
-                self._surfaces[(key, pressed)] = surf
+        attacks = ([pygame.K_f] if self._weapons[0] else [])
+        attacks += ([pygame.K_t] if self._weapons[1] else [])
+        actions = attacks + [pygame.K_SPACE]
+        start_x = SCREEN_WIDTH - right - len(actions) * size - (len(actions) - 1) * gap
+        for i, key in enumerate(actions):
+            rects[key] = pygame.Rect(start_x + i * (size + gap), y, size, size)
+        # Reflow never transfers a finger to a different action. Unmoved holds survive.
+        for pointer, key in tuple(self.pointers.items()):
+            if key not in rects or self.rects.get(key) != rects[key]:
+                del self.pointers[pointer]
+        self.rects = rects
+        self.hud_obstacles = tuple(rect.inflate(gap * 2, gap * 2) for rect in rects.values())
+
+    def _inside(self, key, pos):
+        rect = self.rects[key]
+        return ((pos[0] - rect.centerx) ** 2 + (pos[1] - rect.centery) ** 2
+                <= (rect.width / 2) ** 2)
+
+    def _button_surface(self, key, pressed):
+        icon = self._weapons[1] if key == pygame.K_t else self.ICONS[key]
+        cache_key = (icon, pressed)
+        if cache_key not in self._surfaces:
+            size, visual_size, *_, scale = self._layout
+            # Render at 2x once, then downsample for smooth, transparent circular edges.
+            surf = pygame.Surface((size * 2, size * 2), pygame.SRCALPHA)
+            center = (size, size)
+            pygame.draw.circle(surf, (12, 6, 28, 80 if pressed else 48), center, visual_size)
+            border = (160, 100, 240, 210) if pressed else (145, 210, 235, 140)
+            pygame.draw.circle(surf, border, center, visual_size, max(1, round(2 / scale)))
+            self._draw_icon(surf, icon, center, visual_size * 1.12, scale)
+            self._surfaces[cache_key] = pygame.transform.smoothscale(surf, (size, size))
+        return self._surfaces[cache_key]
+
+    @staticmethod
+    def _draw_icon(surf, icon, center, extent, scale):
+        color = (235, 242, 255, 220)
+        stroke = max(2, round(4 / scale))
+
+        def point(x, y):
+            return (round(center[0] + (x / 100 - 0.5) * extent),
+                    round(center[1] + (y / 100 - 0.5) * extent))
+
+        def polygon(points, width=0):
+            pygame.draw.polygon(surf, color, [point(x, y) for x, y in points], width)
+
+        if icon == "left":
+            polygon([(80, 8), (12, 50), (80, 92)])
+        elif icon == "right":
+            polygon([(20, 8), (88, 50), (20, 92)])
+        elif icon == "jump":
+            polygon([(50, 8), (8, 50), (34, 50), (34, 92), (66, 92), (66, 50), (92, 50)])
+        elif icon == "gun":
+            polygon([(8, 24), (92, 24), (92, 44), (60, 44), (48, 86),
+                     (27, 86), (37, 47), (8, 47)], stroke)
+            pygame.draw.lines(surf, color, False,
+                              [point(60, 47), point(72, 47), point(65, 63), point(55, 63)], stroke)
+        elif icon == "spear":
+            pygame.draw.line(surf, color, point(15, 90), point(76, 25), stroke)
+            polygon([(90, 8), (80, 42), (58, 22)])
+            pygame.draw.line(surf, color, point(18, 75), point(32, 89), stroke)
+        elif icon == "grenade":
+            a, b = point(23, 32), point(77, 92)
+            pygame.draw.ellipse(surf, color, pygame.Rect(a, (b[0] - a[0], b[1] - a[1])), stroke)
+            polygon([(37, 21), (62, 21), (62, 34), (37, 34)], stroke)
+            pygame.draw.circle(surf, color, point(75, 18), max(3, round(extent * 0.1)), stroke)
+            for y in (50, 70):
+                pygame.draw.line(surf, color, point(28, y), point(72, y), max(1, stroke // 2))
 
     def handle_event(self, event):
         """Return (consumed, initial key), keeping every pointer independent."""
@@ -141,12 +205,12 @@ class TouchControls:
 
         if pointer in self.pointers:
             key = self.pointers[pointer]
-            if up or not self.rects[key].collidepoint(pos):
+            if up or not self._inside(key, pos):
                 del self.pointers[pointer]
             return True, None
         if down and self.active and self.enabled:
             for key, rect in self.rects.items():
-                if rect.collidepoint(pos):
+                if self._inside(key, pos):
                     self.pointers[pointer] = key
                     if key == pygame.K_SPACE:
                         self._jump_pressed = True
@@ -164,7 +228,7 @@ class TouchControls:
         if self.active and self.enabled:
             held = self.pointers.values()
             for key, rect in self.rects.items():
-                screen.blit(self._surfaces[(key, key in held)], rect)
+                screen.blit(self._button_surface(key, key in held), rect)
 
     def draw_toggle(self, screen, rect):
         # Options has room for one small switch below its existing guide.

@@ -935,6 +935,7 @@ async def main():
         touch_controls.sync_browser()
 
         for event in pygame.event.get():
+            touch_controls.sync_weapons(weapon_manager)
             touch_controls.set_active(
                 game_state == PLAYING and not health.game_over
                 and not (show_settings_modal or show_options_modal or show_shop_modal)
@@ -1327,6 +1328,7 @@ async def main():
                     platforms = world_manager.platforms
                     ground_segments = world_manager.ground_segments
 
+                touch_controls.sync_weapons(weapon_manager)
                 _held = touch_controls.keys(pygame.key.get_pressed())
                 player.update(platforms, ground_segments, controls=_held)
 
@@ -1534,9 +1536,11 @@ async def main():
             mission.draw(screen)
             settings_icon.draw(screen)
             health.draw(screen)
+            touch_controls.sync_weapons(weapon_manager)
             weapon_manager.draw_ammo_hud(
                 screen, centered=touch_controls.enabled,
                 bottom_margin=touch_controls.bottom_margin if touch_controls.enabled else 10,
+                avoid_rects=touch_controls.hud_obstacles if touch_controls.enabled else (),
             )
 
             # Time + distance — aligned below the HP bar
