@@ -144,6 +144,13 @@ or hide the controller on any device; this choice lasts for the current session.
 
 Web build, deployment, and verification notes: [Touch controls](docs/TOUCH_CONTROLS.md).
 
+The browser canvas fits the largest safe 16:9 area automatically. Entering the
+game requests fullscreen where supported. Phones and tablets show a rotation
+prompt in portrait and pause the run until landscape returns. Music continues
+across run restarts; the original soundtrack and keyboard controls are retained.
+See [Browser display and audio](docs/BROWSER_DISPLAY_AUDIO.md) for implementation
+and verification details.
+
 **Run from source:**
 ```bash
 pip install pygame

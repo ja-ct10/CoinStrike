@@ -5,23 +5,21 @@ from utils import resource_path
 
 
 class Player:
+    _SPRITE_CACHE = {}
+
+    @classmethod
+    def _sprite(cls, filename):
+        key = (filename, PLAYER_WIDTH, PLAYER_HEIGHT)
+        if key not in cls._SPRITE_CACHE:
+            image = pygame.image.load(resource_path(f"assets/{filename}.png")).convert_alpha()
+            cls._SPRITE_CACHE[key] = pygame.transform.scale(image, (PLAYER_WIDTH, PLAYER_HEIGHT))
+        return cls._SPRITE_CACHE[key]
+
     def __init__(self, x, y):
-        self.idle_right = pygame.transform.scale(
-            pygame.image.load(resource_path("assets/player-idle-right.png")).convert_alpha(),
-            (PLAYER_WIDTH, PLAYER_HEIGHT),
-        )
-        self.idle_left = pygame.transform.scale(
-            pygame.image.load(resource_path("assets/player-idle-left.png")).convert_alpha(),
-            (PLAYER_WIDTH, PLAYER_HEIGHT),
-        )
-        self.run_right = pygame.transform.scale(
-            pygame.image.load(resource_path("assets/player-run-right.png")).convert_alpha(),
-            (PLAYER_WIDTH, PLAYER_HEIGHT),
-        )
-        self.run_left = pygame.transform.scale(
-            pygame.image.load(resource_path("assets/player-run-left.png")).convert_alpha(),
-            (PLAYER_WIDTH, PLAYER_HEIGHT),
-        )
+        self.idle_right = self._sprite("player-idle-right")
+        self.idle_left = self._sprite("player-idle-left")
+        self.run_right = self._sprite("player-run-right")
+        self.run_left = self._sprite("player-run-left")
 
         # Weapon-holding sprites — idle and running, left and right
         # Each dict maps weapon name → scaled surface (with try/except fallback)
@@ -58,10 +56,7 @@ class Player:
                 (self.hold_run_left, rl),
             ]:
                 try:
-                    img = pygame.image.load(resource_path(f"assets/{fname}.png")).convert_alpha()
-                    attr[weapon] = pygame.transform.scale(
-                        img, (PLAYER_WIDTH, PLAYER_HEIGHT)
-                    )
+                    attr[weapon] = self._sprite(fname)
                 except Exception:
                     attr[weapon] = None  # fallback: use base sprite
 

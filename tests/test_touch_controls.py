@@ -261,6 +261,27 @@ class TouchTests(unittest.TestCase):
         self.assertGreaterEqual((SCREEN_WIDTH - self.controls.rects[pygame.K_t].right) * scale, 28)
         self.assertGreaterEqual(self.controls.bottom_margin * scale, 29)
 
+    def test_portrait_snapshot_clears_holds_until_landscape(self):
+        data = dict(touch=True, reset=0, width=390, height=219, left=0, right=0, bottom=0,
+                    portraitBlocked=False)
+        bridge = SimpleNamespace(snapshot=json.dumps(data))
+        with patch("touch_controls.IS_WEB", True), patch("platform.window", SimpleNamespace(coinstrikeTouch=bridge), create=True):
+            self.controls.sync_browser()
+            self.press(pygame.K_RIGHT)
+            data["portraitBlocked"] = True
+            bridge.snapshot = json.dumps(data)
+            self.controls.sync_browser()
+            self.controls.set_active(True)
+            self.assertFalse(self.controls.active)
+            self.assertFalse(self.keys()[pygame.K_RIGHT])
+            self.assertEqual(self.press(pygame.K_f), (False, None))
+            data["portraitBlocked"] = False
+            bridge.snapshot = json.dumps(data)
+            self.controls.sync_browser()
+            self.controls.set_active(True)
+            self.assertTrue(self.controls.active)
+            self.assertFalse(self.keys()[pygame.K_RIGHT])
+
     def player(self):
         player = Player.__new__(Player)
         player.rect = pygame.Rect(100, 100, 70, 80)

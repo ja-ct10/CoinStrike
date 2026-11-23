@@ -38,6 +38,7 @@ class TouchControls:
         self.enabled = False
         self.manual = False
         self.active = False
+        self.portrait_blocked = False
         self.pointers = {}
         self._jump_pressed = False
         self._browser_snapshot = None
@@ -54,6 +55,7 @@ class TouchControls:
         self._jump_pressed = False
 
     def set_active(self, active):
+        active = active and not self.portrait_blocked
         if self.active != active:
             self.clear()
             self.active = active
@@ -73,6 +75,12 @@ class TouchControls:
             return
         self._browser_snapshot = snapshot
         data = json.loads(snapshot)
+        portrait_blocked = bool(data.get("portraitBlocked", False))
+        if portrait_blocked != self.portrait_blocked:
+            self.clear()
+            self.portrait_blocked = portrait_blocked
+            if portrait_blocked:
+                self.set_active(False)
         if not self.manual:
             self.enabled = data["touch"]
         if self._browser_reset != data["reset"]:
@@ -139,8 +147,12 @@ class TouchControls:
             surf = pygame.Surface((size * 2, size * 2), pygame.SRCALPHA)
             center = (size, size)
             pygame.draw.circle(surf, (12, 6, 28, 80 if pressed else 48), center, visual_size)
-            border = (160, 100, 240, 210) if pressed else (145, 210, 235, 140)
+            movement = key in (pygame.K_LEFT, pygame.K_RIGHT)
+            border = (160, 32, 240, 210) if pressed else (0, 220, 240, 140)
             pygame.draw.circle(surf, border, center, visual_size, max(1, round(2 / scale)))
+            if movement:
+                pygame.draw.circle(surf, (160, 32, 240, 75), center,
+                                   round(visual_size * 0.83), max(1, round(2 / scale)))
             self._draw_icon(surf, icon, center, visual_size * 1.12, scale)
             self._surfaces[cache_key] = pygame.transform.smoothscale(surf, (size, size))
         return self._surfaces[cache_key]
@@ -158,9 +170,9 @@ class TouchControls:
             pygame.draw.polygon(surf, color, [point(x, y) for x, y in points], width)
 
         if icon == "left":
-            polygon([(80, 8), (12, 50), (80, 92)])
+            polygon([(48, 8), (8, 50), (48, 92), (48, 66), (92, 66), (92, 34), (48, 34)])
         elif icon == "right":
-            polygon([(20, 8), (88, 50), (20, 92)])
+            polygon([(52, 8), (92, 50), (52, 92), (52, 66), (8, 66), (8, 34), (52, 34)])
         elif icon == "jump":
             polygon([(50, 8), (8, 50), (34, 50), (34, 92), (66, 92), (66, 50), (92, 50)])
         elif icon == "gun":

@@ -152,8 +152,8 @@ config = {
     xtermjs : "1" ,
     _sdl2 : "canvas",
     user_canvas : 0,
-    user_canvas_managed : 0,
-    gui_divider : 2,
+    user_canvas_managed : 1,
+    gui_divider : 1,
     ume_block : 1,
     can_close : 0,
     archive : "coinstrike",
@@ -161,9 +161,9 @@ config = {
     cdn : "https://pygame-web.github.io/cdn/0.9.3/",
     autorun : 0,
     PYBUILD : "3.12",
-    fb_ar   :  1.77,
-    fb_width : "1280",
-    fb_height : "720"
+    fb_ar   :  16 / 9,
+    fb_width : "1024",
+    fb_height : "576"
 }
 
 function show_infobox() {
@@ -184,9 +184,12 @@ function show_infobox() {
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;800&family=Press+Start+2P&display=swap');
 
+        html { width: 100%; height: 100%; overflow: hidden; background: #060410; }
+
         body {
             font-family: 'Outfit', sans-serif;
             margin: 0;
+            width: 100%;
             padding: 0;
             background: #060410 url('loading-page.jpg') no-repeat center center fixed;
             background-blend-mode: multiply;
@@ -292,6 +295,7 @@ function show_infobox() {
             display: inline-block;
             transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
             animation: pulseGlow 1.5s infinite alternate;
+            line-height: 1.4;
         }
 
         #infobox:hover {
@@ -329,6 +333,37 @@ function show_infobox() {
             display: none !important;
         }
 
+        #rotate-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 30;
+            display: grid;
+            place-content: center;
+            justify-items: center;
+            gap: 18px;
+            box-sizing: border-box;
+            padding: 24px;
+            text-align: center;
+            background: rgba(6, 4, 16, 0.97);
+            touch-action: none;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        #rotate-overlay[hidden] { display: none; }
+        #rotate-overlay svg { width: 76px; height: 76px; color: #00dcec; }
+        #rotate-title { margin: 0; color: #ffdd44; font-size: 22px; }
+        #rotate-overlay p { margin: 0; color: #c8c8df; }
+        #rotate-fullscreen {
+            padding: 12px 18px;
+            border: 1px solid #a020f0;
+            border-radius: 8px;
+            background: rgba(160, 32, 240, 0.2);
+            color: #fff;
+            font: inherit;
+            cursor: pointer;
+        }
+        #infobox:focus-visible, #rotate-fullscreen:focus-visible { outline: 2px solid #00dcec; outline-offset: 4px; }
+
         @media (max-width: 600px) {
             #transfer { width: calc(100% - 32px); padding: 28px 20px; box-sizing: border-box; }
             .loading-title { font-size: clamp(18px, 5vw, 26px); }
@@ -345,38 +380,111 @@ function show_infobox() {
         <div class="emscripten" style="margin-bottom: 10px;">
             <progress value="0" max="100" id="progress"></progress>
         </div>
-        <div id="infobox">Loading...</div>
+        <button id="infobox" type="button">Loading...</button>
     </div>
 
     <canvas class="emscripten" id="canvas" width="1px" height="1px" oncontextmenu="event.preventDefault()" tabindex="1"></canvas>
     <canvas class="emscripten" id="canvas3d" width="1280px" height="720px" oncontextmenu="event.preventDefault()" tabindex="1" hidden></canvas>
+
+    <div id="rotate-overlay" role="dialog" aria-modal="true" aria-labelledby="rotate-title" hidden>
+        <svg viewBox="0 0 80 80" fill="none" aria-hidden="true">
+            <rect x="22" y="12" width="36" height="56" rx="6" stroke="currentColor" stroke-width="3" transform="rotate(35 40 40)"/>
+            <path d="M14 32A29 29 0 0 1 57 14M57 14H45M57 14V26" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <h2 id="rotate-title">Rotate your device</h2>
+        <p>CoinStrike plays in landscape.</p>
+        <button id="rotate-fullscreen" type="button">Enter fullscreen</button>
+    </div>
 
     <div id="pyconsole" hidden>
         <div id="terminal" tabIndex="1" align="left"></div>
     </div>
 
     <script type="application/javascript">
-    // Pygame owns the controller and all gameplay input. Only publish browser
-    // capabilities/geometry and cancellation signals, without per-frame JS work.
+    // Keep the logical framebuffer fixed; only CSS placement follows the safe viewport.
     (() => {
         const gameCanvas = document.getElementById("canvas");
+        const overlay = document.getElementById("rotate-overlay");
+        const entry = document.getElementById("infobox");
+        const fullscreenButton = document.getElementById("rotate-fullscreen");
         const state = { snapshot: "" };
         window.coinstrikeTouch = state;
         let reset = 0;
         let touched = false;
+        let portraitBlocked = false;
+        let attemptedFullscreen = false;
+        let orientationLocked = false;
         const coarse = window.matchMedia("(any-pointer: coarse)");
+
+        function mobileDevice() {
+            return Boolean(navigator.userAgentData?.mobile ||
+                /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || "") ||
+                (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1) ||
+                (navigator.maxTouchPoints > 0 && window.matchMedia("(pointer: coarse)").matches));
+        }
+        function viewport() {
+            const view = window.visualViewport;
+            const style = getComputedStyle(document.body);
+            const x = view?.offsetLeft || 0, y = view?.offsetTop || 0;
+            return {
+                x, y, width: view?.width || window.innerWidth, height: view?.height || window.innerHeight,
+                left: parseFloat(style.paddingLeft) || 0, right: parseFloat(style.paddingRight) || 0,
+                top: parseFloat(style.paddingTop) || 0, bottom: parseFloat(style.paddingBottom) || 0
+            };
+        }
         function refresh() {
             const rect = gameCanvas.getBoundingClientRect();
-            const style = getComputedStyle(document.body);
+            const view = viewport();
             state.snapshot = JSON.stringify({
                 touch: touched || navigator.maxTouchPoints > 0 || coarse.matches,
-                width: rect.width, height: rect.height, reset,
-                left: Math.max(0, (parseFloat(style.paddingLeft) || 0) - rect.left),
-                right: Math.max(0, (parseFloat(style.paddingRight) || 0) - (innerWidth - rect.right)),
-                bottom: Math.max(0, (parseFloat(style.paddingBottom) || 0) - (innerHeight - rect.bottom))
+                width: rect.width, height: rect.height, reset, portraitBlocked,
+                left: Math.max(0, view.x + view.left - rect.left),
+                right: Math.max(0, rect.right - (view.x + view.width - view.right)),
+                bottom: Math.max(0, rect.bottom - (view.y + view.height - view.bottom))
             });
         }
-        function cancel() { reset++; refresh(); }
+        function fit() {
+            const view = viewport();
+            const width = Math.max(1, view.width - view.left - view.right);
+            const height = Math.max(1, view.height - view.top - view.bottom);
+            const scale = Math.min(width / 1024, height / 576);
+            Object.assign(gameCanvas.style, {
+                position: "fixed", margin: "0", right: "auto", bottom: "auto",
+                width: `${1024 * scale}px`, height: `${576 * scale}px`,
+                left: `${view.x + view.left + (width - 1024 * scale) / 2}px`,
+                top: `${view.y + view.top + (height - 576 * scale) / 2}px`
+            });
+            const blocked = mobileDevice() && view.width < view.height;
+            if (blocked !== portraitBlocked) { reset++; portraitBlocked = blocked; }
+            overlay.hidden = !blocked;
+            entry.disabled = blocked;
+            refresh();
+        }
+        function cancel() { reset++; fit(); }
+        function fullscreen() { return document.fullscreenElement || document.webkitFullscreenElement; }
+        function releaseOrientation() {
+            if (orientationLocked && !fullscreen()) {
+                try { window.screen.orientation.unlock(); } catch (_) { /* Browser may unlock automatically. */ }
+                orientationLocked = false;
+            }
+        }
+        async function enterFullscreen(retry) {
+            if (attemptedFullscreen && !retry) return;
+            attemptedFullscreen = true;
+            const root = document.documentElement;
+            const request = root.requestFullscreen || root.webkitRequestFullscreen;
+            if (!request) return;
+            try {
+                if (!fullscreen()) await request.call(root);
+                if (fullscreen() && mobileDevice() && window.screen?.orientation?.lock) {
+                    await window.screen.orientation.lock("landscape");
+                    orientationLocked = true;
+                }
+            } catch (_) { /* Viewport fit and manual rotation remain available. */ }
+            finally { releaseOrientation(); cancel(); }
+        }
+        entry.addEventListener("click", () => enterFullscreen(false));
+        fullscreenButton.addEventListener("click", () => enterFullscreen(true));
         gameCanvas.addEventListener("touchstart", () => {
             if (!touched) { touched = true; refresh(); }
         }, { passive: true });
@@ -385,6 +493,10 @@ function show_infobox() {
         window.addEventListener("pagehide", cancel);
         window.addEventListener("resize", cancel);
         window.addEventListener("orientationchange", cancel);
+        if (window.screen?.orientation?.addEventListener) window.screen.orientation.addEventListener("change", cancel);
+        for (const name of ["fullscreenchange", "webkitfullscreenchange"]) {
+            document.addEventListener(name, () => { releaseOrientation(); cancel(); });
+        }
         document.addEventListener("visibilitychange", () => { if (document.hidden) cancel(); });
         window.addEventListener("pointerup", event => {
             if (event.pointerType !== "mouse") return;
@@ -395,11 +507,12 @@ function show_infobox() {
         if (coarse.addEventListener) coarse.addEventListener("change", refresh);
         if (window.visualViewport) window.visualViewport.addEventListener("resize", cancel);
         new ResizeObserver(refresh).observe(gameCanvas);
-        refresh();
+        state.fit = fit;
+        fit();
     })();
 
     globalThis.__canvas_resized = (self, ecw, ech) => {
-        console.warn("TODO: panda3d canvas monitor", self, ecw, ech)
+        window.coinstrikeTouch.fit();
     }
 
     async function custom_onload(debug_hidden) {

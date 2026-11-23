@@ -39,13 +39,14 @@ else:
     security_manager = SecurityManager()
 
 
+pygame.mixer.pre_init(44100, -16, 2, 2048)
 pygame.init()
 
 # Initialize audio with error handling for systems without audio devices
 audio_available = True
 try:
-    pygame.mixer.pre_init(44100, -16, 2, 1024)
-    pygame.mixer.init()
+    if pygame.mixer.get_init() is None:
+        pygame.mixer.init(44100, -16, 2, 2048)
 except pygame.error as e:
     print(f"Warning: Audio initialization failed - {e}")
     print("Game will run without sound.")
@@ -61,13 +62,43 @@ except pygame.error as e:
 
 # Load background music if audio is available
 bg_music = None
+music_channel = None
+music_started = False
+music_paused = False
 if audio_available:
     try:
         bg_music = pygame.mixer.Sound(resource_path("assets/sounds/background-music.ogg"))
         bg_music.set_volume(0.5)
+        pygame.mixer.set_reserved(1)
+        music_channel = pygame.mixer.Channel(0)
     except pygame.error as e:
         print(f"Warning: Could not load background music - {e}")
         audio_available = False
+
+
+def _resume_music():
+    """Start once, then resume only an intentionally paused channel."""
+    global music_started, music_paused
+    if not audio_available or bg_music is None or music_channel is None:
+        return
+    try:
+        if not music_started:
+            music_channel.play(bg_music, loops=-1)
+            music_started = True
+            music_paused = False
+        elif music_paused:
+            music_channel.unpause()
+            music_paused = False
+    except pygame.error as error:
+        print(f"Audio resume failed: {error}")
+
+
+def _pause_music():
+    global music_paused
+    if music_channel is not None and music_started and not music_paused:
+        music_channel.pause()
+        music_paused = True
+
 
 MENU = "menu"
 PLAYING = "playing"
@@ -910,13 +941,7 @@ async def main():
     global _mission_complete_restart_rect, _mission_complete_quit_rect
     global game_stats, _max_combo, _live_score, bg_music
 
-    if audio_available and bg_music:
-        try:
-            pygame.mixer.unpause()
-            if not pygame.mixer.get_busy():
-                bg_music.play(-1)
-        except Exception as e:
-            print(f"Audio autoplay failed: {e}")
+    _resume_music()
 
     last_tick = pygame.time.get_ticks()
     frame_delay = 1000 // WEB_FPS
@@ -938,21 +963,18 @@ async def main():
             touch_controls.sync_weapons(weapon_manager)
             touch_controls.set_active(
                 game_state == PLAYING and not health.game_over
+                and not touch_controls.portrait_blocked
                 and not (show_settings_modal or show_options_modal or show_shop_modal)
             )
             consumed, initial_key = touch_controls.handle_event(event)
             if event.type == pygame.QUIT:
                 running = False
+            if touch_controls.portrait_blocked:
+                continue
 
             # Safeguard to play or resume music on user gesture inside the Pygame canvas
             if event.type in (pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN, pygame.FINGERDOWN):
-                if audio_available and bg_music:
-                    try:
-                        pygame.mixer.unpause()
-                        if not pygame.mixer.get_busy():
-                            bg_music.play(-1)
-                    except Exception:
-                        pass
+                _resume_music()
 
             if consumed:
                 if initial_key in (pygame.K_f, pygame.K_t):
@@ -1003,8 +1025,7 @@ async def main():
                             ) = reset_game()
                             game_frames = 0
                             _reset_stats()
-                            if audio_available:
-                                pygame.mixer.unpause()
+                            _resume_music()
                             game_state = PLAYING
                             camera.offset_x = 0
                             camera.offset_y = 0
@@ -1067,8 +1088,7 @@ async def main():
                                 ) = reset_game()
                                 game_frames = 0
                                 _reset_stats()
-                                if audio_available:
-                                    pygame.mixer.unpause()
+                                _resume_music()
                                 game_state = PLAYING
                                 camera.offset_x = 0
                                 camera.offset_y = 0
@@ -1129,9 +1149,7 @@ async def main():
                                     ) = reset_game()
                                     game_frames = 0
                                     _reset_stats()
-                                    if audio_available and bg_music:
-                                        bg_music.stop()
-                                        bg_music.play(-1)
+                                    _resume_music()
                                     camera.offset_x = 0
                                     camera.offset_y = 0
                                     show_settings_modal = False
@@ -1141,8 +1159,7 @@ async def main():
                                     options_source = "game"
                                 elif label == "QUIT":
                                     show_settings_modal = False
-                                    if audio_available:
-                                        pygame.mixer.pause()
+                                    _pause_music()
                                     game_state = MENU
                                 break
 
@@ -1176,17 +1193,14 @@ async def main():
                         ) = reset_game()
                         game_frames = 0
                         _reset_stats()
-                        if audio_available and bg_music:
-                            bg_music.stop()
-                            bg_music.play(-1)
+                        _resume_music()
                         camera.offset_x = 0
                         camera.offset_y = 0
                         game_state = PLAYING
                     elif _game_over_no_rect and _game_over_no_rect.collidepoint(
                         click_pos
                     ):
-                        if audio_available:
-                            pygame.mixer.pause()
+                        _pause_music()
                         game_state = MENU
 
                 # Mission Complete buttons
@@ -1212,9 +1226,7 @@ async def main():
                         ) = reset_game()
                         game_frames = 0
                         _reset_stats()
-                        if audio_available and bg_music:
-                            bg_music.stop()
-                            bg_music.play(-1)
+                        _resume_music()
                         camera.offset_x = 0
                         camera.offset_y = 0
                         game_state = PLAYING
@@ -1222,8 +1234,7 @@ async def main():
                         _mission_complete_quit_rect
                         and _mission_complete_quit_rect.collidepoint(click_pos)
                     ):
-                        if audio_available:
-                            pygame.mixer.pause()
+                        _pause_music()
                         game_state = MENU
 
                 if (
@@ -1239,6 +1250,7 @@ async def main():
 
         touch_controls.set_active(
             game_state == PLAYING and not health.game_over
+            and not touch_controls.portrait_blocked
             and not (show_settings_modal or show_options_modal or show_shop_modal)
         )
 
@@ -1295,15 +1307,17 @@ async def main():
             draw_boss_intro(screen, boss_intro_timer, BOSS_INTRO_DURATION)
 
             # Count down and transition to PLAYING once the intro finishes
-            boss_intro_timer -= 1
-            if boss_intro_timer <= 0:
+            if not touch_controls.portrait_blocked:
+                boss_intro_timer -= 1
+            if boss_intro_timer <= 0 and not touch_controls.portrait_blocked:
                 enemy_manager.spawn_boss(player)
                 game_state = PLAYING
 
         elif game_state in (PLAYING, GAME_OVER):
             any_modal = show_settings_modal or show_options_modal or show_shop_modal
 
-            if game_state == PLAYING and not any_modal and not health.game_over:
+            if (game_state == PLAYING and not any_modal and not health.game_over
+                    and not touch_controls.portrait_blocked):
 
                 game_frames += 1
                 difficulty_scaler.update(game_frames)
@@ -1590,6 +1604,7 @@ async def main():
 
         touch_controls.set_active(
             game_state == PLAYING and not health.game_over
+            and not touch_controls.portrait_blocked
             and not (show_settings_modal or show_options_modal or show_shop_modal)
         )
         touch_controls.draw(screen)
