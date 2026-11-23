@@ -27,6 +27,7 @@ PYTHON_FILES = [
     "settings.py",
     "camera.py",
     "player.py",
+    "touch_controls.py",
     "health.py",
     "mission.py",
     "coins.py",

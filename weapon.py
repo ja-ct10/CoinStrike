@@ -713,7 +713,7 @@ class WeaponManager:
 
         screen.blit(img, (wx, wy))
 
-    def draw_ammo_hud(self, screen):
+    def draw_ammo_hud(self, screen, centered=False, bottom_margin=10):
         """Draw ammo counter bar bottom-left of screen."""
         if not self.owned:
             return
@@ -721,13 +721,15 @@ class WeaponManager:
         font = self._ammo_font
 
         panel_x = 10
-        panel_y = SCREEN_HEIGHT - 10
+        panel_y = SCREEN_HEIGHT - bottom_margin
         slot_w, slot_h = 80, 52
         slot_gap = 8
 
         order = [
             w for w in ["gun", "spear", "grenade"] if w in self.owned or w in self.ammo
         ]
+        if centered:
+            panel_x = (SCREEN_WIDTH - len(order) * (slot_w + slot_gap) + slot_gap) // 2
 
         for i, weapon in enumerate(order):
             if weapon not in self.owned and weapon not in self.ammo:

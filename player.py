@@ -89,8 +89,8 @@ class Player:
             self.coins_collected += 1
             self.coins_earned += 1
 
-    def update(self, platforms, ground_segments, camera_offset_x=0):
-        keys = pygame.key.get_pressed()
+    def update(self, platforms, ground_segments, camera_offset_x=0, controls=None):
+        keys = controls if controls is not None else pygame.key.get_pressed()
         self.running = False
 
         if keys[pygame.K_RIGHT] or keys[pygame.K_d]:

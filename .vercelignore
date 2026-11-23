@@ -1,0 +1,6 @@
+# The existing Vercel project uses vercel-deploy as its root directory.
+/*
+!vercel-deploy
+!vercel-deploy/**
+vercel-deploy/.vercel
+vercel-deploy/.env*

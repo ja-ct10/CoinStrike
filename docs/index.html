@@ -175,8 +175,7 @@ function show_infobox() {
     <title>CoinStrike</title>
     <meta charset="UTF-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="viewport" content="height=device-height, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes"/>
 
@@ -194,10 +193,14 @@ function show_infobox() {
             background-size: cover;
             color: #ffffff;
             height: 100vh;
+            height: 100dvh;
+            box-sizing: border-box;
+            padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
             display: flex;
             align-items: center;
             justify-content: center;
             overflow: hidden;
+            overscroll-behavior: none;
         }
 
         #transfer {
@@ -304,6 +307,10 @@ function show_infobox() {
         }
 
         canvas.emscripten {
+            touch-action: none;
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-touch-callout: none;
             border: 0px none;
             background-color: transparent;
             width: 100%;
@@ -320,6 +327,11 @@ function show_infobox() {
 
         #pyconsole, #system, #box, #dlg, #html {
             display: none !important;
+        }
+
+        @media (max-width: 600px) {
+            #transfer { width: calc(100% - 32px); padding: 28px 20px; box-sizing: border-box; }
+            .loading-title { font-size: clamp(18px, 5vw, 26px); }
         }
     </style>
 
@@ -344,6 +356,47 @@ function show_infobox() {
     </div>
 
     <script type="application/javascript">
+    // Pygame owns the controller and all gameplay input. Only publish browser
+    // capabilities/geometry and cancellation signals, without per-frame JS work.
+    (() => {
+        const gameCanvas = document.getElementById("canvas");
+        const state = { snapshot: "" };
+        window.coinstrikeTouch = state;
+        let reset = 0;
+        let touched = false;
+        const coarse = window.matchMedia("(any-pointer: coarse)");
+        function refresh() {
+            const rect = gameCanvas.getBoundingClientRect();
+            const style = getComputedStyle(document.body);
+            state.snapshot = JSON.stringify({
+                touch: touched || navigator.maxTouchPoints > 0 || coarse.matches,
+                width: rect.width, height: rect.height, reset,
+                left: Math.max(0, (parseFloat(style.paddingLeft) || 0) - rect.left),
+                right: Math.max(0, (parseFloat(style.paddingRight) || 0) - (innerWidth - rect.right)),
+                bottom: Math.max(0, (parseFloat(style.paddingBottom) || 0) - (innerHeight - rect.bottom))
+            });
+        }
+        function cancel() { reset++; refresh(); }
+        gameCanvas.addEventListener("touchstart", () => {
+            if (!touched) { touched = true; refresh(); }
+        }, { passive: true });
+        gameCanvas.addEventListener("touchcancel", cancel, { passive: true });
+        window.addEventListener("blur", cancel);
+        window.addEventListener("pagehide", cancel);
+        window.addEventListener("resize", cancel);
+        window.addEventListener("orientationchange", cancel);
+        document.addEventListener("visibilitychange", () => { if (document.hidden) cancel(); });
+        window.addEventListener("pointerup", event => {
+            const rect = gameCanvas.getBoundingClientRect();
+            if (event.clientX < rect.left || event.clientX > rect.right ||
+                event.clientY < rect.top || event.clientY > rect.bottom) cancel();
+        });
+        if (coarse.addEventListener) coarse.addEventListener("change", refresh);
+        if (window.visualViewport) window.visualViewport.addEventListener("resize", cancel);
+        new ResizeObserver(refresh).observe(gameCanvas);
+        refresh();
+    })();
+
     globalThis.__canvas_resized = (self, ecw, ech) => {
         console.warn("TODO: panda3d canvas monitor", self, ecw, ech)
     }

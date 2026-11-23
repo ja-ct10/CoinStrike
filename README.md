@@ -132,6 +132,16 @@ Falling rocks spawn from above at increasing frequency — starting every 5 seco
 
 ## Installation
 
+**Play in your browser:** [coinstrike.vercel.app](https://coinstrike.vercel.app/)
+
+Touch devices automatically show Left/Right, Jump, Fire, and Throw controls.
+Hold movement or attack buttons and combine them with other fingers. Landscape
+orientation gives the clearest view. Shop, Settings, menus, and restart support taps.
+Keyboard controls remain available. Use **Options → On-screen controls** to show
+or hide the controller on any device; this choice lasts for the current session.
+
+Web build, deployment, and verification notes: [Touch controls](docs/TOUCH_CONTROLS.md).
+
 **Run from source:**
 ```bash
 pip install pygame

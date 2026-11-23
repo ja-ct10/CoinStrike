@@ -11,6 +11,7 @@ from mission import Mission, PANEL_W, PANEL_H, PANEL_X, PANEL_Y
 from coins import Coin, CoinManager
 from shop import Shop, WEAPON_DATA
 from weapon import WeaponManager
+from touch_controls import TouchControls, pointer_click
 from enemy import EnemyManager
 from world import WorldManager
 from difficulty import DifficultyScaler
@@ -76,6 +77,7 @@ BOSS_INTRO = "boss_intro"
 game_state = MENU
 
 screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+touch_controls = TouchControls()
 
 menu_bg = pygame.image.load(resource_path("assets/game-cover.png")).convert()
 menu_rect = menu_bg.get_rect()
@@ -469,6 +471,7 @@ def _reset_stats():
     game_stats = {}
     _max_combo = 0
     _live_score = 0
+    touch_controls.clear()
     _MC_STATS_SURF = None
     _MC_STATS_DATA = None
 
@@ -574,6 +577,7 @@ _OPTIONS_MODAL_STATIC: pygame.Surface | None = None
 _OPTIONS_OVERLAY: pygame.Surface | None = None
 _OPTIONS_CLOSE_SURFS: dict = {}  # is_hover → Surface
 _OPTIONS_X_SURF: "pygame.Surface | None" = None  # "X" label — rendered once
+_options_toggle_rect = pygame.Rect(SCREEN_WIDTH // 2 - 190, SCREEN_HEIGHT // 2 + 210, 380, 32)
 
 
 def draw_options_modal(screen, mouse_pos):
@@ -673,6 +677,7 @@ def draw_options_modal(screen, mouse_pos):
         _OPTIONS_MODAL_STATIC = static
 
     screen.blit(_OPTIONS_MODAL_STATIC, (modal_x, modal_y))
+    touch_controls.draw_toggle(screen, _options_toggle_rect)
 
     is_close_hover = close_btn_rect.collidepoint(mouse_pos)
     close_surf = _OPTIONS_CLOSE_SURFS.get(is_close_hover)
@@ -927,13 +932,19 @@ async def main():
         else:
             clock.tick(WEB_FPS)
         mouse_pos = pygame.mouse.get_pos()
+        touch_controls.sync_browser()
 
         for event in pygame.event.get():
+            touch_controls.set_active(
+                game_state == PLAYING and not health.game_over
+                and not (show_settings_modal or show_options_modal or show_shop_modal)
+            )
+            consumed, initial_key = touch_controls.handle_event(event)
             if event.type == pygame.QUIT:
                 running = False
 
             # Safeguard to play or resume music on user gesture inside the Pygame canvas
-            if event.type in (pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN):
+            if event.type in (pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN, pygame.FINGERDOWN):
                 if audio_available and bg_music:
                     try:
                         pygame.mixer.unpause()
@@ -941,6 +952,14 @@ async def main():
                             bg_music.play(-1)
                     except Exception:
                         pass
+
+            if consumed:
+                if initial_key in (pygame.K_f, pygame.K_t):
+                    weapon_manager.handle_keydown(
+                        initial_key, player, enemies=enemy_manager.enemies,
+                        boss=enemy_manager.boss,
+                    )
+                continue
 
             if event.type == pygame.KEYDOWN:
                 if game_state == GAME_OVER:
@@ -1019,10 +1038,15 @@ async def main():
                 elif game_state == MISSION_COMPLETE:
                     pass  # handled via MOUSEBUTTONDOWN below
 
-            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            click_pos = pointer_click(event)
+            if click_pos is not None:
+                mouse_pos = click_pos
+                if show_options_modal and _options_toggle_rect.collidepoint(click_pos):
+                    touch_controls.toggle()
+                    continue
                 if game_state == MENU and not show_options_modal:
                     for i, rect in enumerate(menu_button_rects):
-                        if rect.collidepoint(event.pos):
+                        if rect.collidepoint(click_pos):
 
                             if i == 0:  # START
                                 (
@@ -1057,11 +1081,11 @@ async def main():
 
                 # Shop modal clicks
                 if game_state == PLAYING and show_shop_modal:
-                    if _shop_close_rect and _shop_close_rect.collidepoint(event.pos):
+                    if _shop_close_rect and _shop_close_rect.collidepoint(click_pos):
                         show_shop_modal = False
                     else:
                         for btn_rect, idx in _shop_buy_rects:
-                            if btn_rect.collidepoint(event.pos):
+                            if btn_rect.collidepoint(click_pos):
                                 weapon = WEAPON_DATA[idx]
                                 if player.coins_collected >= weapon["price"]:
                                     player.coins_collected -= weapon["price"]
@@ -1076,14 +1100,14 @@ async def main():
                     and not show_options_modal
                 ):
                     if _settings_close_rect and _settings_close_rect.collidepoint(
-                        event.pos
+                        click_pos
                     ):
                         show_settings_modal = False
                     else:
                         for rect, label in zip(
                             _settings_btn_rects, _settings_btn_labels
                         ):
-                            if rect.collidepoint(event.pos):
+                            if rect.collidepoint(click_pos):
                                 if label == "RESUME":
                                     show_settings_modal = False
                                 elif label == "RESTART":
@@ -1125,14 +1149,14 @@ async def main():
                 if (
                     show_options_modal
                     and _options_close_rect
-                    and _options_close_rect.collidepoint(event.pos)
+                    and _options_close_rect.collidepoint(click_pos)
                 ):
                     show_options_modal = False
 
                 # Game Over buttons
                 if game_state == GAME_OVER:
                     if _game_over_yes_rect and _game_over_yes_rect.collidepoint(
-                        event.pos
+                        click_pos
                     ):
                         (
                             player,
@@ -1158,7 +1182,7 @@ async def main():
                         camera.offset_y = 0
                         game_state = PLAYING
                     elif _game_over_no_rect and _game_over_no_rect.collidepoint(
-                        event.pos
+                        click_pos
                     ):
                         if audio_available:
                             pygame.mixer.pause()
@@ -1168,7 +1192,7 @@ async def main():
                 if game_state == MISSION_COMPLETE:
                     if (
                         _mission_complete_restart_rect
-                        and _mission_complete_restart_rect.collidepoint(event.pos)
+                        and _mission_complete_restart_rect.collidepoint(click_pos)
                     ):
                         (
                             player,
@@ -1195,7 +1219,7 @@ async def main():
                         game_state = PLAYING
                     elif (
                         _mission_complete_quit_rect
-                        and _mission_complete_quit_rect.collidepoint(event.pos)
+                        and _mission_complete_quit_rect.collidepoint(click_pos)
                     ):
                         if audio_available:
                             pygame.mixer.pause()
@@ -1207,10 +1231,15 @@ async def main():
                     and not show_options_modal
                     and not show_shop_modal
                 ):
-                    if settings_icon.rect.collidepoint(event.pos):
+                    if settings_icon.rect.collidepoint(click_pos):
                         show_settings_modal = True
-                    elif shop.rect.collidepoint(event.pos):
+                    elif shop.rect.collidepoint(click_pos):
                         show_shop_modal = True
+
+        touch_controls.set_active(
+            game_state == PLAYING and not health.game_over
+            and not (show_settings_modal or show_options_modal or show_shop_modal)
+        )
 
         # ================================================================ UPDATE
         # Performance optimizations applied:
@@ -1298,12 +1327,12 @@ async def main():
                     platforms = world_manager.platforms
                     ground_segments = world_manager.ground_segments
 
-                player.update(platforms, ground_segments)
+                _held = touch_controls.keys(pygame.key.get_pressed())
+                player.update(platforms, ground_segments, controls=_held)
 
                 # Per-frame poll for held fire/throw keys (auto-fire while held).
                 # KEYDOWN handles the initial press; this poll handles continuous fire.
                 # Cache key state once per frame to avoid multiple get_pressed() calls
-                _held = pygame.key.get_pressed()
                 if _held[pygame.K_f]:
                     weapon_manager.handle_keydown(
                         pygame.K_f,
@@ -1505,7 +1534,10 @@ async def main():
             mission.draw(screen)
             settings_icon.draw(screen)
             health.draw(screen)
-            weapon_manager.draw_ammo_hud(screen)
+            weapon_manager.draw_ammo_hud(
+                screen, centered=touch_controls.enabled,
+                bottom_margin=touch_controls.bottom_margin if touch_controls.enabled else 10,
+            )
 
             # Time + distance — aligned below the HP bar
             draw_hud_stats(screen, game_frames, player)
@@ -1517,7 +1549,8 @@ async def main():
             combo_system.draw(screen, y=58)
 
             # Key guide — anchored to the bottom-right corner
-            draw_key_guide(screen)
+            if not touch_controls.enabled:
+                draw_key_guide(screen)
 
             # --- Shop modal ---
             if show_shop_modal:
@@ -1551,6 +1584,11 @@ async def main():
                 draw_mission_complete(screen, mouse_pos, game_stats)
             )
 
+        touch_controls.set_active(
+            game_state == PLAYING and not health.game_over
+            and not (show_settings_modal or show_options_modal or show_shop_modal)
+        )
+        touch_controls.draw(screen)
         pygame.display.flip()
         await asyncio.sleep(0)  # Required for Pygbag - yields control to browser
 
