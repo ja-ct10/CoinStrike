@@ -17,6 +17,7 @@ mode, ammo moves to the bottom center and the keyboard guide is hidden.
 
 ```powershell
 python -m unittest discover -s tests -v
+node --test tests/browser_touch.test.cjs
 python build_web.py
 
 # Run from the repository root. The existing Vercel project's root is vercel-deploy.
@@ -53,3 +54,19 @@ Manual device checklist: load and enter the game; move in both directions; hold
 move+jump+fire/throw together; release each finger; drag off a button; purchase
 and exhaust weapons; pause/resume/restart; rotate and background/resume the page;
 confirm no scrolling, zooming, selection, stuck inputs, HUD overlap, or slowdown.
+
+### Production browser check — 2026-11-23
+
+Verified startup, the Options switch, held on-screen movement, shop purchase,
+held Fire (35 → 32 rounds), no further ammo consumption after release, and
+keyboard movement/pause at `https://coinstrike.vercel.app/`. Browser viewport
+checks used 844×390, 390×844, and 1280×720. The portrait canvas measured 390×219
+and the landscape canvas 693×390, retaining the 1024×576 logical resolution.
+The canvas reports `touch-action: none`. Screenshots are saved locally under
+`build/touch-qa/`. These checks used mouse/keyboard input in a desktop browser;
+Android and iOS hardware checks remain pending.
+
+The Python suite passes 15 tests; the dependency-free Node suite passes three
+browser bridge tests, including releasing a finger outside the canvas without
+cancelling other held fingers. The deployed archive's ETag matched the local
+archive's MD5, and the original COEP/COOP response headers were present.

@@ -387,6 +387,7 @@ function show_infobox() {
         window.addEventListener("orientationchange", cancel);
         document.addEventListener("visibilitychange", () => { if (document.hidden) cancel(); });
         window.addEventListener("pointerup", event => {
+            if (event.pointerType !== "mouse") return;
             const rect = gameCanvas.getBoundingClientRect();
             if (event.clientX < rect.left || event.clientX > rect.right ||
                 event.clientY < rect.top || event.clientY > rect.bottom) cancel();
